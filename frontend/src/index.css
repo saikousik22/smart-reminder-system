@@ -42,3 +42,46 @@ select.glass-input option:checked {
 .btn-secondary {
   @apply bg-white/10 hover:bg-white/20 text-white font-semibold py-2 px-6 rounded-lg transition-all active:scale-95;
 }
+
+/* ── FullCalendar dark theme overrides ── */
+.fc-dark {
+  --fc-border-color: rgba(255, 255, 255, 0.08);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: rgba(255, 255, 255, 0.04);
+  --fc-neutral-text-color: #94a3b8;
+  --fc-today-bg-color: rgba(99, 102, 241, 0.12);
+  --fc-event-text-color: #fff;
+}
+.fc-dark .fc-col-header-cell-cushion,
+.fc-dark .fc-daygrid-day-number,
+.fc-dark .fc-toolbar-title {
+  color: #e2e8f0;
+  text-decoration: none;
+}
+.fc-dark .fc-button {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+.fc-dark .fc-button:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+.fc-dark .fc-button-active,
+.fc-dark .fc-button:not(:disabled):active {
+  background: rgba(99, 102, 241, 0.4) !important;
+  border-color: rgba(99, 102, 241, 0.6) !important;
+}
+.fc-dark .fc-daygrid-day.fc-day-today {
+  background: var(--fc-today-bg-color);
+}
+.fc-dark .fc-event {
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  padding: 1px 4px;
+}
+.fc-dark .fc-event:hover {
+  filter: brightness(1.15);
+}

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Bell, LogOut, User as UserIcon, Plus } from 'lucide-react';
+import { Bell, LogOut, Plus, CalendarDays, BarChart2, Users } from 'lucide-react';
 
 const Navbar = () => {
   const { user, logout } = useAuth();
@@ -26,14 +26,42 @@ const Navbar = () => {
 
         {user ? (
           <div className="flex items-center gap-4">
-            <Link 
-              to="/create" 
+            <Link
+              to="/analytics"
+              className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-full border border-white/10 transition-all font-medium"
+            >
+              <BarChart2 className="w-4 h-4" />
+              Analytics
+            </Link>
+            <Link
+              to="/calendar"
+              className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-full border border-white/10 transition-all font-medium"
+            >
+              <CalendarDays className="w-4 h-4" />
+              Calendar
+            </Link>
+            <Link
+              to="/contacts"
+              className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-full border border-white/10 transition-all font-medium"
+            >
+              <Users className="w-4 h-4" />
+              Contacts
+            </Link>
+            <Link
+              to="/groups"
+              className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white px-4 py-2 rounded-full border border-white/10 transition-all font-medium"
+            >
+              <Users className="w-4 h-4" />
+              Groups
+            </Link>
+            <Link
+              to="/create"
               className="hidden sm:flex items-center gap-2 bg-primary-600/10 hover:bg-primary-600/20 text-primary-400 px-4 py-2 rounded-full border border-primary-500/20 transition-all font-medium"
             >
               <Plus className="w-4 h-4" />
               New Reminder
             </Link>
-            
+
             <div className="h-8 w-px bg-white/10 mx-2 hidden sm:block"></div>
             
             <div className="flex items-center gap-3">

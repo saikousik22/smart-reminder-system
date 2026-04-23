@@ -9,7 +9,11 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.12
 python-dotenv==1.0.1
-apscheduler==3.10.4
+celery[redis]==5.4.0
+redis==5.2.1
+psycopg2-binary==2.9.10
+alembic==1.13.3
 twilio==9.3.6
 aiofiles==24.1.0
 pydantic[email]
+deep-translator==1.11.4

@@ -21,7 +21,7 @@ const Login = () => {
       toast.success('Welcome back!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Login failed. Please check your credentials.');
+      toast.error(error.response?.data?.detail || error.message || 'Login failed. Please check your credentials.');
     } finally {
       setIsSubmitting(false);
     }

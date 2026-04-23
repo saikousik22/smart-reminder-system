@@ -9,11 +9,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text
 from app.config import get_settings
-from app.database import engine, Base
-from app.scheduler import start_scheduler, stop_scheduler
-from app.routers import auth_router, reminder_router, voice_router
+from app.routers import auth_router, reminder_router, voice_router, template_router, translate_router, dashboard_router, contacts_router, groups_router
 
 # Configure logging
 logging.basicConfig(
@@ -29,45 +26,10 @@ UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _run_migrations():
-    """Add columns introduced after initial schema creation (safe to re-run)."""
-    new_columns = [
-        ("retry_count", "INTEGER NOT NULL DEFAULT 0"),
-        ("retry_gap_minutes", "INTEGER NOT NULL DEFAULT 10"),
-        ("attempt_number", "INTEGER NOT NULL DEFAULT 1"),
-        ("parent_reminder_id", "INTEGER"),
-    ]
-    with engine.connect() as conn:
-        result = conn.execute(text("PRAGMA table_info(reminders)"))
-        existing = {row[1] for row in result}
-        for col_name, col_def in new_columns:
-            if col_name not in existing:
-                conn.execute(text(f"ALTER TABLE reminders ADD COLUMN {col_name} {col_def}"))
-                conn.commit()
-                logger.info(f"Migration: added column '{col_name}' to reminders table.")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events."""
-    # Startup
     logger.info(f"Starting {settings.APP_NAME}...")
-
-    # Create database tables
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created.")
-
-    # Add new columns to existing tables (SQLite doesn't support IF NOT EXISTS for columns)
-    _run_migrations()
-    logger.info("Database migrations applied.")
-
-    # Start the background scheduler
-    start_scheduler()
-
     yield
-
-    # Shutdown
-    stop_scheduler()
     logger.info(f"{settings.APP_NAME} shut down.")
 
 
@@ -84,17 +46,24 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
-# Mount audio files as static files (publicly accessible)
+# Audio files are served publicly so Twilio can fetch them during calls.
+# Filenames are UUIDs so they are unguessable in practice. If stricter access
+# control is needed in the future, replace this with a signed-URL endpoint.
 app.mount("/audio", StaticFiles(directory=UPLOAD_DIR), name="audio")
 
 # Include routers
 app.include_router(auth_router.router)
 app.include_router(reminder_router.router)
 app.include_router(voice_router.router)
+app.include_router(template_router.router)
+app.include_router(translate_router.router)
+app.include_router(dashboard_router.router)
+app.include_router(contacts_router.router)
+app.include_router(groups_router.router)
 
 
 @app.get("/", tags=["Health"])

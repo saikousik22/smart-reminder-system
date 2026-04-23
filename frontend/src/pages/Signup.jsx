@@ -46,7 +46,7 @@ const Signup = () => {
       toast.success('Account created successfully!');
       navigate('/dashboard');
     } catch (error) {
-      toast.error(error.response?.data?.detail || 'Signup failed. Please try again.');
+      toast.error(error.response?.data?.detail || error.message || 'Signup failed. Please try again.');
     } finally {
       setIsSubmitting(false);
     }

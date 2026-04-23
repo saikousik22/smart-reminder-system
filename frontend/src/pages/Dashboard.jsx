@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../api/axios';
 import ReminderCard from '../components/ReminderCard';
@@ -11,6 +11,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const debounceRef = useRef(null);
 
   const fetchReminders = async () => {
     setLoading(true);
@@ -26,17 +28,45 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchReminders();
-    // Poll for status updates every 30 seconds
-    const interval = setInterval(fetchReminders, 30000);
-    return () => clearInterval(interval);
+
+    const tick = () => {
+      if (!document.hidden) fetchReminders();
+    };
+    const interval = setInterval(tick, 30000);
+    document.addEventListener('visibilitychange', tick);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', tick);
+    };
   }, []);
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
+    toast((t) => (
+      <span className="flex items-center gap-3">
+        Delete this reminder?
+        <button
+          className="bg-rose-500 text-white px-2 py-1 rounded text-xs font-medium"
+          onClick={() => { toast.dismiss(t.id); confirmDelete(id); }}
+        >
+          Delete
+        </button>
+        <button
+          className="bg-slate-600 text-white px-2 py-1 rounded text-xs font-medium"
+          onClick={() => toast.dismiss(t.id)}
+        >
+          Cancel
+        </button>
+      </span>
+    ), { duration: 5000 });
+  };
+
+  const confirmDelete = async (id) => {
     try {
       await api.delete(`/reminders/${id}`);
-      setReminders(reminders.filter(r => r.id !== id));
+      setReminders(prev => prev.filter(r => r.id !== id));
       toast.success('Reminder deleted');
-    } catch (error) {
+    } catch {
       toast.error('Could not delete reminder');
     }
   };
@@ -68,8 +98,12 @@ const Dashboard = () => {
             type="text"
             placeholder="Search by title or phone..."
             className="glass-input w-full pl-14"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              clearTimeout(debounceRef.current);
+              debounceRef.current = setTimeout(() => setSearchTerm(e.target.value), 300);
+            }}
           />
         </div>
         <div className="flex gap-2">
@@ -85,7 +119,6 @@ const Dashboard = () => {
             <option value="no-answer">No Answer</option>
             <option value="busy">Busy</option>
             <option value="failed">Failed</option>
-            <option value="sent">Sent (legacy)</option>
           </select>
           <button 
             onClick={fetchReminders}

@@ -18,6 +18,15 @@ const AudioRecorder = ({ onRecordingComplete, initialAudioUrl }) => {
     };
   }, []);
 
+  // Revoke blob URL when it changes or component unmounts to prevent memory leaks
+  useEffect(() => {
+    return () => {
+      if (audioUrl && audioUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
+
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -104,6 +113,7 @@ const AudioRecorder = ({ onRecordingComplete, initialAudioUrl }) => {
               <button
                 type="button"
                 onClick={startRecording}
+                aria-label="Start recording"
                 className="w-16 h-16 rounded-full bg-primary-600/20 text-primary-400 flex items-center justify-center hover:bg-primary-600/30 transition-all mb-4 group"
               >
                 <Mic className="w-8 h-8 group-hover:scale-110 transition-transform" />
@@ -121,6 +131,7 @@ const AudioRecorder = ({ onRecordingComplete, initialAudioUrl }) => {
               <button
                 type="button"
                 onClick={stopRecording}
+                aria-label="Stop recording"
                 className="w-16 h-16 rounded-full bg-rose-600/20 text-rose-500 flex items-center justify-center hover:bg-rose-600/30 transition-all mb-4"
               >
                 <Square className="w-8 h-8 fill-current" />
@@ -143,6 +154,7 @@ const AudioRecorder = ({ onRecordingComplete, initialAudioUrl }) => {
                 <button
                   type="button"
                   onClick={resetRecording}
+                  aria-label="Record again"
                   className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm"
                 >
                   <RotateCcw className="w-4 h-4" />
@@ -151,6 +163,7 @@ const AudioRecorder = ({ onRecordingComplete, initialAudioUrl }) => {
                 <button
                   type="button"
                   onClick={resetRecording}
+                  aria-label="Remove recording"
                   className="flex items-center gap-2 text-rose-400 hover:text-rose-300 transition-colors text-sm"
                 >
                   <Trash2 className="w-4 h-4" />

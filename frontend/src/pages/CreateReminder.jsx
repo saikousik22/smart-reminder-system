@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import api from '../api/axios';
 import { toast } from 'react-hot-toast';
 import {
@@ -14,9 +14,17 @@ import {
   Save,
   Type,
   Repeat,
-  RefreshCw
+  RefreshCw,
+  Bookmark,
+  LayoutTemplate,
+  X,
+  MessageSquare,
+  Languages,
+  CheckCircle,
+  BookUser,
+  Users
 } from 'lucide-react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import AudioRecorder from '../components/AudioRecorder';
 import AudioUploader from '../components/AudioUploader';
 
@@ -28,10 +36,41 @@ const RECURRENCE_OPTIONS = [
   { value: 'weekdays', label: 'Weekdays (Mon – Fri)' },
 ];
 
+const LANGUAGE_OPTIONS = [
+  { code: 'hi',    name: 'Hindi' },
+  { code: 'te',    name: 'Telugu' },
+  { code: 'ta',    name: 'Tamil' },
+  { code: 'kn',    name: 'Kannada' },
+  { code: 'ml',    name: 'Malayalam' },
+  { code: 'mr',    name: 'Marathi' },
+  { code: 'bn',    name: 'Bengali' },
+  { code: 'gu',    name: 'Gujarati' },
+  { code: 'pa',    name: 'Punjabi' },
+  { code: 'ur',    name: 'Urdu' },
+  { code: 'fr',    name: 'French' },
+  { code: 'es',    name: 'Spanish' },
+  { code: 'de',    name: 'German' },
+  { code: 'ar',    name: 'Arabic' },
+  { code: 'zh-CN', name: 'Chinese (Simplified)' },
+  { code: 'ja',    name: 'Japanese' },
+  { code: 'ko',    name: 'Korean' },
+  { code: 'pt',    name: 'Portuguese' },
+  { code: 'ru',    name: 'Russian' },
+  { code: 'it',    name: 'Italian' },
+];
+
 const CreateReminder = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const isEdit = !!id;
+
+  // Group mode — pre-filled when navigating from Groups page via Link state
+  const [recipientMode, setRecipientMode] = useState(
+    location.state?.groupId ? 'group' : 'single'
+  );
+  const [groups, setGroups]               = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState(location.state?.groupId ?? null);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -50,13 +89,61 @@ const CreateReminder = () => {
   const [loading, setLoading] = useState(isEdit);
   const [existingAudioUrl, setExistingAudioUrl] = useState(null);
 
+  // SMS fallback state
+  const [originalText, setOriginalText]             = useState('');
+  const [preferredLanguage, setPreferredLanguage]   = useState('');
+  const [fallbackText, setFallbackText]             = useState('');
+  const [translating, setTranslating]               = useState(false);
+  const [translationConfirmed, setTranslationConfirmed] = useState(false);
+
+  // Template state
+  const [templates, setTemplates]             = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [showTemplateSave, setShowTemplateSave] = useState(false);
+  const [templateName, setTemplateName]         = useState('');
+  const [savingTemplate, setSavingTemplate]     = useState(false);
+
+  // Contact picker state
+  const [contacts, setContacts]           = useState([]);
+  const [showContactPicker, setShowContactPicker] = useState(false);
+  const [contactSearch, setContactSearch] = useState('');
+
+  const parseUtcDate = (isoString) => {
+    return new Date(/[+-]\d{2}:\d{2}$|Z$/i.test(isoString) ? isoString : `${isoString}Z`);
+  };
+
+  // Fetch templates, contacts, and groups (only on create form)
+  useEffect(() => {
+    if (isEdit) return;
+    const controller = new AbortController();
+    api.get('/templates', { signal: controller.signal }).then(r => setTemplates(r.data)).catch(() => {});
+    api.get('/contacts', { signal: controller.signal }).then(r => setContacts(r.data)).catch(() => {});
+    api.get('/groups', { signal: controller.signal }).then(r => setGroups(r.data)).catch(() => {});
+    return () => controller.abort();
+  }, [isEdit]);
+
+  const applyTemplate = (templateId) => {
+    const tpl = templates.find(t => t.id === Number(templateId));
+    if (!tpl) { setSelectedTemplateId(null); return; }
+    setSelectedTemplateId(tpl.id);
+    setFormData(prev => ({ ...prev, title: tpl.title, phone_number: tpl.phone_number }));
+    setRecurrence(tpl.recurrence || 'none');
+    if (tpl.retry_count > 0) {
+      setRetryEnabled(true);
+      setRetryCount(tpl.retry_count);
+      setRetryGapMinutes(tpl.retry_gap_minutes);
+    } else {
+      setRetryEnabled(false);
+    }
+  };
+
   useEffect(() => {
     if (isEdit) {
       const fetchReminder = async () => {
         try {
           const response = await api.get(`/reminders/${id}`);
           const r = response.data;
-          const dt = new Date(r.scheduled_time + 'Z');
+          const dt = parseUtcDate(r.scheduled_time);
           setFormData({
             title: r.title,
             phone_number: r.phone_number,
@@ -71,8 +158,14 @@ const CreateReminder = () => {
             setRetryGapMinutes(r.retry_gap_minutes);
           }
           if (r.recurrence_end_date) {
-            const endDt = new Date(r.recurrence_end_date + 'Z');
+            const endDt = parseUtcDate(r.recurrence_end_date);
             setRecurrenceEndDate(endDt.toLocaleDateString('en-CA'));
+          }
+          if (r.original_text) setOriginalText(r.original_text);
+          if (r.fallback_text)  setFallbackText(r.fallback_text);
+          if (r.preferred_language) {
+            setPreferredLanguage(r.preferred_language);
+            if (r.fallback_text) setTranslationConfirmed(true);
           }
         } catch (error) {
           toast.error('Could not load reminder details');
@@ -89,6 +182,21 @@ const CreateReminder = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleTranslate = async () => {
+    if (!originalText.trim()) { toast.error('Enter a fallback message to translate.'); return; }
+    if (!preferredLanguage)   { toast.error('Select a target language first.'); return; }
+    setTranslating(true);
+    setTranslationConfirmed(false);
+    try {
+      const res = await api.post('/translate', { text: originalText, target_lang: preferredLanguage });
+      setFallbackText(res.data.translated_text);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Translation failed. Please try again.');
+    } finally {
+      setTranslating(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -99,10 +207,18 @@ const CreateReminder = () => {
       return;
     }
 
-    if (!/^\+91\d{10}$/.test(formData.phone_number)) {
-      toast.error('Please enter a valid Indian mobile number in E.164 format, e.g. +919876543210.');
-      setIsSubmitting(false);
-      return;
+    if (recipientMode === 'group') {
+      if (!selectedGroupId) {
+        toast.error('Please select a group.');
+        setIsSubmitting(false);
+        return;
+      }
+    } else {
+      if (!/^\+[1-9]\d{0,14}$/.test(formData.phone_number)) {
+        toast.error('Please enter a valid phone number in E.164 format, e.g. +919876543210.');
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     if (!formData.scheduled_date || !formData.scheduled_time) {
@@ -118,8 +234,14 @@ const CreateReminder = () => {
       return;
     }
 
-    if (!audioFile && !isEdit) {
-      toast.error('Please record or upload a voice message.');
+    if (!audioFile && !isEdit && !selectedTemplateId) {
+      toast.error('Please record or upload a voice message, or choose a template.');
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (recurrence !== 'none' && recurrenceEndDate && recurrenceEndDate < formData.scheduled_date) {
+      toast.error('Recurrence end date must be on or after the scheduled date.');
       setIsSubmitting(false);
       return;
     }
@@ -131,6 +253,8 @@ const CreateReminder = () => {
     data.append('scheduled_time', localDt.toISOString());
     if (audioFile) {
       data.append('audio_file', audioFile);
+    } else if (selectedTemplateId && !isEdit) {
+      data.append('template_id', String(selectedTemplateId));
     }
     if (recurrence !== 'none') {
       data.append('recurrence', recurrence);
@@ -145,11 +269,17 @@ const CreateReminder = () => {
     }
     data.append('retry_count', retryEnabled ? String(retryCount) : '0');
     data.append('retry_gap_minutes', String(retryGapMinutes));
+    if (originalText.trim())  data.append('original_text', originalText.trim());
+    if (fallbackText.trim())  data.append('fallback_text', fallbackText.trim());
+    if (preferredLanguage)    data.append('preferred_language', preferredLanguage);
 
     try {
       if (isEdit) {
         await api.put(`/reminders/${id}`, data);
         toast.success('Reminder updated successfully');
+      } else if (recipientMode === 'group') {
+        const res = await api.post(`/groups/${selectedGroupId}/remind`, data);
+        toast.success(res.data.message);
       } else {
         await api.post('/reminders', data);
         toast.success('Reminder created! We will call you at the scheduled time.');
@@ -159,6 +289,37 @@ const CreateReminder = () => {
       toast.error(error.response?.data?.detail || error.message || 'Something went wrong. Please try again.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleSaveAsTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) { toast.error('Please enter a template name.'); return; }
+    if (!audioFile && !isEdit) { toast.error('Please record or upload audio before saving as template.'); return; }
+    setSavingTemplate(true);
+    try {
+      if (isEdit) {
+        await api.post(`/templates/from-reminder/${id}`, { name });
+      } else {
+        const fd = new FormData();
+        fd.append('name', name);
+        fd.append('title', formData.title || 'Untitled');
+        fd.append('phone_number', formData.phone_number || '+910000000000');
+        fd.append('audio_file', audioFile);
+        if (recurrence !== 'none') fd.append('recurrence', recurrence);
+        fd.append('retry_count', retryEnabled ? String(retryCount) : '0');
+        fd.append('retry_gap_minutes', String(retryGapMinutes));
+        await api.post('/templates', fd);
+      }
+      toast.success(`Template "${name}" saved!`);
+      setShowTemplateSave(false);
+      setTemplateName('');
+      // Refresh list so it appears in the picker on next create
+      api.get('/templates').then(r => setTemplates(r.data)).catch(() => {});
+    } catch {
+      toast.error('Could not save template. Please try again.');
+    } finally {
+      setSavingTemplate(false);
     }
   };
 
@@ -193,8 +354,62 @@ const CreateReminder = () => {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-8">
+        {/* Template Picker — create mode only */}
+        {!isEdit && templates.length > 0 && (
+          <section className="glass-card p-6 rounded-2xl space-y-3">
+            <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+              <LayoutTemplate className="w-4 h-4 text-primary-400" />
+              Start from a Template
+            </h2>
+            <select
+              value={selectedTemplateId ?? ''}
+              onChange={e => applyTemplate(e.target.value)}
+              className="glass-input w-full"
+            >
+              <option value="">— choose a template —</option>
+              {templates.map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            {selectedTemplateId && (
+              <p className="text-xs text-slate-500">
+                Fields pre-filled from template. Audio from template will be used unless you record/upload a new one.
+              </p>
+            )}
+          </section>
+        )}
+
         {/* Basic Info Section */}
         <section className="glass-card p-6 rounded-2xl space-y-6">
+          {/* Recipient mode toggle — create only */}
+          {!isEdit && (
+            <div>
+              <label className="text-sm font-medium text-slate-300 mb-2 block">Send to</label>
+              <div className="flex p-1 bg-white/5 rounded-xl max-w-xs">
+                <button
+                  type="button"
+                  onClick={() => setRecipientMode('single')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                    recipientMode === 'single' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Phone className="w-4 h-4" />
+                  Single
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRecipientMode('group')}
+                  className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-lg text-sm font-medium transition-all ${
+                    recipientMode === 'group' ? 'bg-primary-600 text-white shadow-lg' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Group
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
@@ -210,21 +425,118 @@ const CreateReminder = () => {
                 onChange={handleChange}
               />
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                <Phone className="w-4 h-4 text-emerald-400" />
-                Phone Number
-              </label>
-              <input
-                name="phone_number"
-                required
-                className="glass-input w-full"
-                placeholder="+919876543210"
-                value={formData.phone_number}
-                onChange={handleChange}
-              />
-              <p className="text-xs text-slate-500">Enter your phone number in E.164 format, e.g. +919876543210.</p>
-            </div>
+            {recipientMode === 'group' ? (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-primary-400" />
+                  Select Group
+                </label>
+                {groups.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    No groups yet.{' '}
+                    <a href="/groups" className="text-primary-400 hover:underline">Create a group first.</a>
+                  </p>
+                ) : (
+                  <select
+                    className="glass-input w-full"
+                    value={selectedGroupId ?? ''}
+                    onChange={e => setSelectedGroupId(Number(e.target.value) || null)}
+                  >
+                    <option value="">— choose a group —</option>
+                    {groups.map(g => (
+                      <option key={g.id} value={g.id}>
+                        {g.name} ({g.member_count} member{g.member_count !== 1 ? 's' : ''})
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-slate-500">Each group member will receive a separate call.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                  <Phone className="w-4 h-4 text-emerald-400" />
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <input
+                    name="phone_number"
+                    required={recipientMode === 'single'}
+                    className="glass-input w-full pr-10"
+                    placeholder="+919876543210"
+                    value={formData.phone_number}
+                    onChange={handleChange}
+                  />
+                  {contacts.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => { setShowContactPicker(v => !v); setContactSearch(''); }}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-primary-400 transition-colors"
+                      title="Pick from contacts"
+                    >
+                      <BookUser className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+
+                <AnimatePresence>
+                  {showContactPicker && (
+                    <motion.div
+                      key="contact-picker"
+                      initial={{ opacity: 0, y: -4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -4 }}
+                      className="glass-card rounded-xl border border-white/10 overflow-hidden"
+                    >
+                      <div className="p-2 border-b border-white/10">
+                        <input
+                          className="glass-input w-full text-sm py-1.5"
+                          placeholder="Search contacts…"
+                          value={contactSearch}
+                          onChange={e => setContactSearch(e.target.value)}
+                          autoFocus
+                        />
+                      </div>
+                      <ul className="max-h-48 overflow-y-auto divide-y divide-white/5">
+                        {contacts
+                          .filter(c =>
+                            c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
+                            c.phone_number.includes(contactSearch)
+                          )
+                          .map(c => (
+                            <li key={c.id}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, phone_number: c.phone_number }));
+                                  setShowContactPicker(false);
+                                }}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-white/5 transition-colors text-left"
+                              >
+                                <div className="bg-primary-600/20 p-1.5 rounded-full shrink-0">
+                                  <Phone className="w-3.5 h-3.5 text-primary-400" />
+                                </div>
+                                <div className="min-w-0">
+                                  <p className="text-sm text-white font-medium truncate">{c.name}</p>
+                                  <p className="text-xs text-slate-400">{c.phone_number}</p>
+                                </div>
+                              </button>
+                            </li>
+                          ))
+                        }
+                        {contacts.filter(c =>
+                          c.name.toLowerCase().includes(contactSearch.toLowerCase()) ||
+                          c.phone_number.includes(contactSearch)
+                        ).length === 0 && (
+                          <li className="px-3 py-4 text-center text-slate-500 text-sm">No contacts found</li>
+                        )}
+                      </ul>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+                <p className="text-xs text-slate-500">Enter your phone number in E.164 format, e.g. +919876543210.</p>
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -237,7 +549,7 @@ const CreateReminder = () => {
                 name="scheduled_date"
                 type="date"
                 required
-                min={new Date().toISOString().split('T')[0]}
+                min={new Date().toLocaleDateString('en-CA')}
                 className="glass-input w-full"
                 value={formData.scheduled_date}
                 onChange={handleChange}
@@ -292,7 +604,7 @@ const CreateReminder = () => {
               </label>
               <input
                 type="date"
-                min={formData.scheduled_date || new Date().toISOString().split('T')[0]}
+                min={formData.scheduled_date || new Date().toLocaleDateString('en-CA')}
                 value={recurrenceEndDate}
                 onChange={(e) => setRecurrenceEndDate(e.target.value)}
                 className="glass-input w-full"
@@ -421,6 +733,141 @@ const CreateReminder = () => {
           )}
         </section>
 
+        {/* SMS Fallback Section */}
+        <section className="glass-card p-6 rounded-2xl space-y-4">
+          <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+            <MessageSquare className="w-4 h-4 text-primary-400" />
+            SMS Fallback (optional)
+          </h2>
+          <p className="text-xs text-slate-500">
+            If the call is not answered after all attempts, an SMS will be sent automatically.
+            Type your message in English, choose a language, and translate for preview.
+          </p>
+
+          <div className="space-y-2">
+            <label className="text-xs font-medium text-slate-400">Fallback message (English)</label>
+            <textarea
+              value={originalText}
+              onChange={e => { setOriginalText(e.target.value); setTranslationConfirmed(false); }}
+              placeholder="e.g., You missed your medication reminder."
+              maxLength={1000}
+              rows={2}
+              className="w-full glass-input text-sm resize-none"
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" />
+                Translate to
+              </label>
+              <select
+                value={preferredLanguage}
+                onChange={e => { setPreferredLanguage(e.target.value); setTranslationConfirmed(false); }}
+                className="glass-input w-full text-sm"
+              >
+                <option value="">— send in English —</option>
+                {LANGUAGE_OPTIONS.map(l => (
+                  <option key={l.code} value={l.code}>{l.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex items-end">
+              <button
+                type="button"
+                onClick={handleTranslate}
+                disabled={translating || !originalText.trim() || !preferredLanguage}
+                className="w-full btn-secondary py-2.5 flex items-center justify-center gap-2 text-sm disabled:opacity-40"
+              >
+                {translating ? (
+                  <Loader className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Languages className="w-4 h-4" />
+                )}
+                {translating ? 'Translating…' : 'Translate & Preview'}
+              </button>
+            </div>
+          </div>
+
+          {fallbackText && (
+            <motion.div
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-2"
+            >
+              <label className="text-xs font-medium text-slate-400">
+                Translated message{preferredLanguage ? ` (${LANGUAGE_OPTIONS.find(l => l.code === preferredLanguage)?.name ?? preferredLanguage})` : ''} — edit if needed
+              </label>
+              <textarea
+                value={fallbackText}
+                onChange={e => { setFallbackText(e.target.value); setTranslationConfirmed(false); }}
+                maxLength={1000}
+                rows={2}
+                className="w-full glass-input text-sm resize-none"
+                dir={['ar', 'ur'].includes(preferredLanguage) ? 'rtl' : 'ltr'}
+              />
+              <button
+                type="button"
+                onClick={() => setTranslationConfirmed(true)}
+                className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                  translationConfirmed
+                    ? 'text-emerald-400'
+                    : 'text-primary-400 hover:text-primary-300'
+                }`}
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+                {translationConfirmed ? 'Confirmed — will be used as SMS' : 'Confirm this translation'}
+              </button>
+            </motion.div>
+          )}
+        </section>
+
+        {/* Save as Template inline form */}
+        <AnimatePresence>
+          {showTemplateSave && (
+            <motion.section
+              key="tpl-save-form"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="glass-card p-5 rounded-2xl space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                  <Bookmark className="w-4 h-4 text-primary-400" />
+                  Save as Template
+                </span>
+                <button type="button" onClick={() => setShowTemplateSave(false)} className="text-slate-500 hover:text-slate-300 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <input
+                value={templateName}
+                onChange={e => setTemplateName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleSaveAsTemplate()}
+                placeholder="e.g. Weekly check-in, Medication reminder…"
+                maxLength={100}
+                className="glass-input w-full"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={handleSaveAsTemplate}
+                  disabled={savingTemplate || !templateName.trim()}
+                  className="flex-1 btn-primary py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  {savingTemplate ? <Loader className="w-4 h-4 animate-spin" /> : <><Bookmark className="w-4 h-4" /> Save Template</>}
+                </button>
+                <button type="button" onClick={() => setShowTemplateSave(false)} className="btn-secondary px-6">
+                  Cancel
+                </button>
+              </div>
+            </motion.section>
+          )}
+        </AnimatePresence>
+
         <div className="flex gap-4 pt-4">
           <button
             type="submit"
@@ -435,6 +882,14 @@ const CreateReminder = () => {
                 {isEdit ? 'Update Reminder' : 'Set Reminder'}
               </>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowTemplateSave(v => !v); if (!templateName) setTemplateName(formData.title); }}
+            title="Save current settings as a reusable template"
+            className="btn-secondary px-4 flex items-center gap-2"
+          >
+            <Bookmark className="w-5 h-5" />
           </button>
           <button
             type="button"

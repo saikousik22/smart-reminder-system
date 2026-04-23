@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileAudio, X, Music } from 'lucide-react';
+import { Upload, X, Music } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'react-hot-toast';
+
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 const AudioUploader = ({ onFileSelect, initialFileName }) => {
   const [file, setFile] = useState(null);
@@ -11,13 +14,17 @@ const AudioUploader = ({ onFileSelect, initialFileName }) => {
   const handleFileChange = (e) => {
     const selectedFile = e.target.files[0];
     if (selectedFile) {
-      if (selectedFile.type.startsWith('audio/')) {
-        setFile(selectedFile);
-        setFileName(selectedFile.name);
-        onFileSelect(selectedFile);
-      } else {
-        alert("Please select a valid audio file (.mp3, .wav, .ogg)");
+      if (!selectedFile.type.startsWith('audio/')) {
+        toast.error('Please select a valid audio file (.mp3, .wav, .ogg)');
+        return;
       }
+      if (selectedFile.size > MAX_FILE_SIZE) {
+        toast.error('File size exceeds the 5MB limit');
+        return;
+      }
+      setFile(selectedFile);
+      setFileName(selectedFile.name);
+      onFileSelect(selectedFile);
     }
   };
 
@@ -41,11 +48,18 @@ const AudioUploader = ({ onFileSelect, initialFileName }) => {
     e.preventDefault();
     setIsDragging(false);
     const selectedFile = e.dataTransfer.files[0];
-    if (selectedFile && selectedFile.type.startsWith('audio/')) {
-      setFile(selectedFile);
-      setFileName(selectedFile.name);
-      onFileSelect(selectedFile);
+    if (!selectedFile) return;
+    if (!selectedFile.type.startsWith('audio/')) {
+      toast.error('Please select a valid audio file (.mp3, .wav, .ogg)');
+      return;
     }
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      toast.error('File size exceeds the 5MB limit');
+      return;
+    }
+    setFile(selectedFile);
+    setFileName(selectedFile.name);
+    onFileSelect(selectedFile);
   };
 
   return (

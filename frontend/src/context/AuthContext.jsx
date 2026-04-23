@@ -8,17 +8,25 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    const controller = new AbortController();
     const checkAuth = async () => {
       try {
-        const response = await api.get('/auth/me');
+        const response = await api.get('/auth/me', { signal: controller.signal });
         setUser(response.data);
-      } catch {
-        // Not authenticated — normal on first load
+      } catch (err) {
+        if (err.name !== 'CanceledError' && err.name !== 'AbortError') {
+          const status = err.response?.status;
+          if (status !== 401 && status !== 403) {
+            console.error('Auth check failed with unexpected error:', err);
+          }
+          // 401/403 = not authenticated, normal on first load
+        }
       } finally {
         setLoading(false);
       }
     };
     checkAuth();
+    return () => controller.abort();
   }, []);
 
   const login = async (email, password) => {
