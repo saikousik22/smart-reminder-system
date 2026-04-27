@@ -12,13 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-# Fix case-sensitivity: Windows creates 'Versions', Linux needs 'versions'
-RUN if [ -d alembic/Versions ] && [ ! -d alembic/versions ]; then \
-    cp -r alembic/Versions alembic/versions; \
-    fi
-
-RUN mkdir -p uploads
-
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
