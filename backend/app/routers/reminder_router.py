@@ -5,7 +5,7 @@ Reminder CRUD router with audio file upload support.
 import logging
 import os
 import re
-import shutil
+import tempfile
 import uuid
 import subprocess
 from datetime import datetime, timezone, timedelta
@@ -18,13 +18,11 @@ from app.database import get_db
 from app.models import User, Reminder, ReminderTemplate
 from app.auth import get_current_user
 from app.schemas import ReminderResponse, MessageResponse, FeedbackSubmit
+from app.tasks import enqueue_reminder_eta
+from app.services import blob_storage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reminders", tags=["Reminders"])
-
-# Audio upload directory (backend/uploads/)
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".wav", ".mp3", ".ogg", ".webm"}
 TWILIO_SUPPORTED_EXTENSIONS = {".wav", ".mp3"}
@@ -93,8 +91,16 @@ def parse_scheduled_time(scheduled_time: str) -> datetime:
     return parsed_time.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def save_audio_file(file: UploadFile) -> str:
-    """Save an uploaded audio file with a UUID filename. Returns the filename."""
+def _safe_remove(path: str) -> None:
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except OSError as exc:
+        logger.warning(f"Could not remove temp file {path}: {exc}")
+
+
+def save_audio_file(file: UploadFile, user_id: int) -> str:
+    """Upload audio to Azure Blob Storage. Returns blob path {user_id}/{uuid}.ext."""
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,18 +113,13 @@ def save_audio_file(file: UploadFile) -> str:
             detail=f"Audio format '{ext}' not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    # Generate temporary filename for the uploaded audio
-    temp_name = f"{uuid.uuid4()}{ext}"
-    temp_path = os.path.join(UPLOAD_DIR, temp_name)
-
-    # Write in 64 KB chunks and abort early if the size limit is exceeded,
-    # avoiding writing a full oversized file to disk before rejecting it
+    # Stream upload to a temp file with early size-limit abort
+    tmp_fd, temp_path = tempfile.mkstemp(suffix=ext)
     total_bytes = 0
-    chunk_size = 64 * 1024
     try:
-        with open(temp_path, "wb") as buffer:
+        with os.fdopen(tmp_fd, "wb") as buf:
             while True:
-                chunk = file.file.read(chunk_size)
+                chunk = file.file.read(64 * 1024)
                 if not chunk:
                     break
                 total_bytes += len(chunk)
@@ -127,48 +128,55 @@ def save_audio_file(file: UploadFile) -> str:
                         status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Audio file exceeds 5 MB limit",
                     )
-                buffer.write(chunk)
+                buf.write(chunk)
     except HTTPException:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _safe_remove(temp_path)
         raise
     except Exception as exc:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
+        _safe_remove(temp_path)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to save audio file.",
         ) from exc
 
-    if ext in TWILIO_SUPPORTED_EXTENSIONS:
-        return temp_name
-
     # Transcode unsupported formats to WAV for Twilio playback
-    converted_name = f"{uuid.uuid4()}.wav"
-    converted_path = os.path.join(UPLOAD_DIR, converted_name)
+    final_path = temp_path
+    final_ext = ext
+    if ext not in TWILIO_SUPPORTED_EXTENSIONS:
+        wav_fd, wav_path = tempfile.mkstemp(suffix=".wav")
+        os.close(wav_fd)
+        try:
+            transcode_to_wav(temp_path, wav_path)
+        finally:
+            _safe_remove(temp_path)
+        final_path = wav_path
+        final_ext = ".wav"
+
+    # Upload to Azure Blob Storage at container/{user_id}/{uuid}.ext
+    blob_path = f"{user_id}/{uuid.uuid4()}{final_ext}"
+    content_type = "audio/wav" if final_ext == ".wav" else "audio/mpeg"
     try:
-        transcode_to_wav(temp_path, converted_path)
+        with open(final_path, "rb") as f:
+            blob_storage.upload_audio(blob_path, f.read(), content_type=content_type)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload audio file.",
+        ) from exc
     finally:
-        try:
-            os.remove(temp_path)
-        except OSError as e:
-            logger.warning(f"Could not delete temporary audio file {temp_path}: {e}")
-    return converted_name
+        _safe_remove(final_path)
+
+    return blob_path
 
 
-def delete_audio_file(filename: str):
-    """Delete an audio file from the uploads directory."""
-    file_path = os.path.join(UPLOAD_DIR, filename)
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            logger.warning(f"Could not delete audio file {filename}: {e}")
+def delete_audio_file(blob_path: str) -> None:
+    blob_storage.delete_audio(blob_path)
 
 
 VALID_RECURRENCES = {"daily", "weekly", "monthly", "weekdays"}
-VALID_STATUSES = {"pending", "processing", "calling", "answered", "no-answer", "busy", "failed"}
-_TERMINAL_STATUSES = {"answered", "no-answer", "busy", "failed"}
+VALID_STATUSES = {"pending", "processing", "calling", "answered", "no-answer", "busy", "failed", "failed_system"}
+# failed_system = all system retries exhausted (infra failure, not user behaviour)
+_TERMINAL_STATUSES = {"answered", "no-answer", "busy", "failed", "failed_system"}
 _E164_RE = re.compile(r"^\+[1-9]\d{0,14}$")
 
 
@@ -218,7 +226,7 @@ async def create_reminder(
         )
 
     if audio_file is not None:
-        audio_filename = save_audio_file(audio_file)
+        audio_filename = save_audio_file(audio_file, current_user.id)
     elif template_id is not None:
         template = (
             db.query(ReminderTemplate)
@@ -228,13 +236,8 @@ async def create_reminder(
         if not template:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
         ext = os.path.splitext(template.audio_filename)[1]
-        new_filename = f"{uuid.uuid4()}{ext}"
-        src = os.path.join(UPLOAD_DIR, template.audio_filename)
-        dst = os.path.join(UPLOAD_DIR, new_filename)
-        if not os.path.exists(src):
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Template audio file not found on server.")
-        shutil.copy2(src, dst)
-        audio_filename = new_filename
+        audio_filename = f"{current_user.id}/{uuid.uuid4()}{ext}"
+        blob_storage.copy_audio(template.audio_filename, audio_filename)
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -259,6 +262,14 @@ async def create_reminder(
     db.add(reminder)
     db.commit()
     db.refresh(reminder)
+
+    # ETA task: fires trigger_call at exactly scheduled_time.
+    # If Redis is unavailable this raises — the reminder is already in DB as 'pending'
+    # and the 5-min recovery beat will pick it up.
+    try:
+        enqueue_reminder_eta(reminder)
+    except Exception as exc:
+        logger.warning(f"Reminder {reminder.id}: could not enqueue ETA task ({exc}). Recovery beat will handle it.")
 
     return reminder
 
@@ -346,7 +357,7 @@ async def update_reminder(
     old_audio_filename = None
     if audio_file is not None:
         old_audio_filename = reminder.audio_filename
-        reminder.audio_filename = save_audio_file(audio_file)
+        reminder.audio_filename = save_audio_file(audio_file, current_user.id)
 
     if recurrence is not None:
         # Empty string or "none" explicitly clears recurrence
@@ -384,7 +395,8 @@ async def update_reminder(
     delivery_field_changed = (
         scheduled_time is not None or audio_file is not None or phone_number is not None
     )
-    if delivery_field_changed and reminder.status not in _TERMINAL_STATUSES:
+    needs_reschedule = delivery_field_changed and reminder.status not in _TERMINAL_STATUSES
+    if needs_reschedule:
         reminder.status = "pending"
 
     db.commit()
@@ -393,6 +405,14 @@ async def update_reminder(
     # Delete old file only after a successful commit so we never lose it on rollback
     if old_audio_filename:
         delete_audio_file(old_audio_filename)
+
+    # Re-enqueue ETA when delivery fields changed (new scheduled_time or same time).
+    # The stale-ETA guard in trigger_call handles any overlap with the old ETA task.
+    if needs_reschedule:
+        try:
+            enqueue_reminder_eta(reminder)
+        except Exception as exc:
+            logger.warning(f"Reminder {reminder.id}: could not re-enqueue ETA task ({exc}). Recovery beat will handle it.")
 
     return reminder
 
@@ -444,11 +464,19 @@ def delete_reminder(
     audio_filename = reminder.audio_filename
     title = reminder.title
 
+    # Check before deletion: retry children and recurrence siblings share the same
+    # audio_filename string. Only delete the file if no other reminder references it.
+    other_uses = (
+        db.query(Reminder)
+        .filter(Reminder.audio_filename == audio_filename, Reminder.id != reminder_id)
+        .count()
+    )
+
     db.delete(reminder)
     db.commit()
 
-    # Delete the audio file only after the DB record is gone
-    delete_audio_file(audio_filename)
+    if not other_uses:
+        delete_audio_file(audio_filename)
 
     return {"message": f"Reminder '{title}' deleted successfully"}
 

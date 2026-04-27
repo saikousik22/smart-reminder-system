@@ -4,13 +4,12 @@ Groups router — manage contact groups and create multi-recipient reminders.
 
 import logging
 import os
-import shutil
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.database import get_db
 from app.models import User, Group, GroupMember, Contact, Reminder, ReminderTemplate
@@ -19,10 +18,9 @@ from app.schemas import (
     GroupCreate, GroupUpdate, GroupMemberAdd,
     GroupResponse, ContactInGroup, GroupReminderCreateResponse, MessageResponse,
 )
-from app.routers.reminder_router import (
-    save_audio_file, parse_scheduled_time, UPLOAD_DIR,
-    VALID_RECURRENCES, _E164_RE,
-)
+from app.routers.reminder_router import save_audio_file, parse_scheduled_time, VALID_RECURRENCES, _E164_RE
+from app.services import blob_storage
+from app.tasks import enqueue_reminder_eta
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/groups", tags=["Groups"])
@@ -48,6 +46,27 @@ def _build_group_response(group: Group) -> GroupResponse:
     )
 
 
+def _load_group(db: Session, group_id: int, user_id: int) -> Group | None:
+    """Fetch a single group with members+contacts eagerly loaded in one query."""
+    return (
+        db.query(Group)
+        .options(joinedload(Group.members).joinedload(GroupMember.contact))
+        .filter(Group.id == group_id, Group.user_id == user_id)
+        .first()
+    )
+
+
+def _load_groups(db: Session, user_id: int) -> list[Group]:
+    """Fetch all groups for a user with members+contacts eagerly loaded in one query."""
+    return (
+        db.query(Group)
+        .options(joinedload(Group.members).joinedload(GroupMember.contact))
+        .filter(Group.user_id == user_id)
+        .order_by(Group.name)
+        .all()
+    )
+
+
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("", response_model=list[GroupResponse])
@@ -55,7 +74,7 @@ def list_groups(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    groups = db.query(Group).filter(Group.user_id == current_user.id).order_by(Group.name).all()
+    groups = _load_groups(db, current_user.id)
     return [_build_group_response(g) for g in groups]
 
 
@@ -73,7 +92,7 @@ def create_group(
     group = Group(user_id=current_user.id, name=payload.name)
     db.add(group)
     db.commit()
-    db.refresh(group)
+    group = _load_group(db, group.id, current_user.id)
     return _build_group_response(group)
 
 
@@ -89,7 +108,7 @@ def update_group(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
     group.name = payload.name
     db.commit()
-    db.refresh(group)
+    group = _load_group(db, group_id, current_user.id)
     return _build_group_response(group)
 
 
@@ -135,7 +154,7 @@ def add_member(
 
     db.add(GroupMember(group_id=group_id, contact_id=payload.contact_id))
     db.commit()
-    db.refresh(group)
+    group = _load_group(db, group_id, current_user.id)
     return _build_group_response(group)
 
 
@@ -158,7 +177,7 @@ def remove_member(
 
     db.delete(member)
     db.commit()
-    db.refresh(group)
+    group = _load_group(db, group_id, current_user.id)
     return _build_group_response(group)
 
 
@@ -182,7 +201,7 @@ async def create_group_reminder(
     db: Session = Depends(get_db),
 ):
     """Create one reminder per group member, all firing at the same time."""
-    group = db.query(Group).filter(Group.id == group_id, Group.user_id == current_user.id).first()
+    group = _load_group(db, group_id, current_user.id)
     if not group:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Group not found")
 
@@ -208,9 +227,9 @@ async def create_group_reminder(
     if parsed_end_date and parsed_end_date < parsed_time:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Recurrence end date must be on or after scheduled time.")
 
-    # Resolve audio — upload or template
+    # Resolve audio — upload once, then fan-out copies per member
     if audio_file is not None:
-        base_audio = save_audio_file(audio_file)
+        base_audio = save_audio_file(audio_file, current_user.id)
     elif template_id is not None:
         template = db.query(ReminderTemplate).filter(
             ReminderTemplate.id == template_id, ReminderTemplate.user_id == current_user.id
@@ -218,30 +237,22 @@ async def create_group_reminder(
         if not template:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template not found")
         ext = os.path.splitext(template.audio_filename)[1]
-        base_audio = f"{uuid.uuid4()}{ext}"
-        src = os.path.join(UPLOAD_DIR, template.audio_filename)
-        dst = os.path.join(UPLOAD_DIR, base_audio)
-        if not os.path.exists(src):
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Template audio file not found on server.")
-        shutil.copy2(src, dst)
+        base_audio = f"{current_user.id}/{uuid.uuid4()}{ext}"
+        blob_storage.copy_audio(template.audio_filename, base_audio)
     else:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Either audio_file or template_id is required.")
 
-    # Fan out: one reminder per member, each gets its own audio file copy
-    created_count = 0
+    # Fan out: each member gets their own blob copy so independent deletion is safe
+    created_reminders = []
     for member in group.members:
         phone = member.contact.phone_number
         if not _E164_RE.match(phone):
             logger.warning(f"Skipping member {member.contact.name} — invalid phone: {phone}")
             continue
 
-        # Each reminder gets its own audio file copy so independent deletion is safe
         ext = os.path.splitext(base_audio)[1]
-        member_audio = f"{uuid.uuid4()}{ext}"
-        shutil.copy2(
-            os.path.join(UPLOAD_DIR, base_audio),
-            os.path.join(UPLOAD_DIR, member_audio),
-        )
+        member_audio = f"{current_user.id}/{uuid.uuid4()}{ext}"
+        blob_storage.copy_audio(base_audio, member_audio)
 
         reminder = Reminder(
             user_id=current_user.id,
@@ -260,19 +271,24 @@ async def create_group_reminder(
             group_id=group_id,
         )
         db.add(reminder)
-        created_count += 1
+        created_reminders.append(reminder)
 
-    # Remove the base audio used as the copy source
-    try:
-        os.remove(os.path.join(UPLOAD_DIR, base_audio))
-    except OSError:
-        pass
+    # Delete the base blob used only as the copy source
+    blob_storage.delete_audio(base_audio)
 
+    db.flush()   # assign IDs to all new reminders before commit
     db.commit()
 
+    # Enqueue ETA tasks after commit so all reminder IDs are persisted in DB
+    for r in created_reminders:
+        try:
+            enqueue_reminder_eta(r)
+        except Exception as exc:
+            logger.warning(f"Reminder {r.id}: could not enqueue ETA task ({exc}). Recovery beat will handle it.")
+
     return GroupReminderCreateResponse(
-        message=f"Reminder scheduled for {created_count} contact(s) in '{group.name}'",
-        count=created_count,
+        message=f"Reminder scheduled for {len(created_reminders)} contact(s) in '{group.name}'",
+        count=len(created_reminders),
         group_id=group.id,
         group_name=group.name,
     )

@@ -1,7 +1,8 @@
 """
 Simple in-memory rate limiter used as a FastAPI dependency.
-Not suitable for multi-process deployments (use Redis-backed limiting there).
-The threading.Lock makes the check-then-append atomic within a single process.
+Per-process only — not shared across multiple uvicorn workers or App Service instances.
+For a multi-process production deployment, replace _check() with a Redis INCR+EXPIRE
+implementation. The logic here still meaningfully limits single-IP abuse within one worker.
 """
 
 import time
@@ -14,8 +15,17 @@ _lock = threading.Lock()
 _WINDOW = 60.0  # seconds
 
 
+def _get_client_ip(request: Request) -> str:
+    # Azure App Service and most proxies set X-Forwarded-For.
+    # Fall back to direct connection IP if the header is absent.
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 def _check(request: Request, max_requests: int) -> None:
-    key = request.client.host if request.client else "unknown"
+    key = _get_client_ip(request)
     now = time.time()
     cutoff = now - _WINDOW
     with _lock:

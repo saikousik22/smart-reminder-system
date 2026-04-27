@@ -12,8 +12,8 @@ settings = get_settings()
 
 celery_app = Celery(
     "smart_reminder",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
+    broker=settings.redis_url,
+    backend=settings.redis_url,
     include=["app.tasks"],
 )
 
@@ -31,9 +31,12 @@ celery_app.conf.update(
     worker_pool=_pool,
     worker_concurrency=5,
     beat_schedule={
-        "check-reminders-every-60s": {
-            "task": "app.tasks.beat_check_reminders",
-            "schedule": 60.0,
+        # Recovery-only: catches reminders whose ETA tasks were lost (Redis restart,
+        # app crash between commit and apply_async, etc.). Runs every 10 minutes.
+        # Normal scheduling is handled by trigger_call.apply_async(eta=...) at creation.
+        "recover-missed-reminders": {
+            "task": "app.tasks.recover_missed_reminders",
+            "schedule": 600.0,
         },
     },
 )

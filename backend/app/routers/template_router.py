@@ -4,7 +4,6 @@ Template CRUD router — save/apply reusable reminder configurations.
 
 import logging
 import os
-import shutil
 import uuid
 from typing import Optional
 
@@ -14,25 +13,11 @@ from app.database import get_db
 from app.models import User, Reminder, ReminderTemplate
 from app.auth import get_current_user
 from app.schemas import TemplateResponse, TemplateSaveRequest, MessageResponse
-from app.routers.reminder_router import save_audio_file, UPLOAD_DIR
+from app.routers.reminder_router import save_audio_file
+from app.services import blob_storage
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/templates", tags=["Templates"])
-
-
-def _copy_audio(source_filename: str) -> str:
-    """Copy an audio file to a new UUID filename and return the new filename."""
-    ext = os.path.splitext(source_filename)[1]
-    new_filename = f"{uuid.uuid4()}{ext}"
-    src = os.path.join(UPLOAD_DIR, source_filename)
-    dst = os.path.join(UPLOAD_DIR, new_filename)
-    if not os.path.exists(src):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Audio file not found on server.",
-        )
-    shutil.copy2(src, dst)
-    return new_filename
 
 
 @router.get("", response_model=list[TemplateResponse])
@@ -62,7 +47,7 @@ async def create_template(
     db: Session = Depends(get_db),
 ):
     """Create a new template by uploading an audio file alongside reminder settings."""
-    audio_filename = save_audio_file(audio_file)
+    audio_filename = save_audio_file(audio_file, current_user.id)
     template = ReminderTemplate(
         user_id=current_user.id,
         name=name,
@@ -90,7 +75,7 @@ def save_reminder_as_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Save an existing reminder as a reusable template (copies its audio file)."""
+    """Save an existing reminder as a reusable template (copies its audio blob)."""
     reminder = (
         db.query(Reminder)
         .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
@@ -99,13 +84,16 @@ def save_reminder_as_template(
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
 
-    audio_filename = _copy_audio(reminder.audio_filename)
+    ext = os.path.splitext(reminder.audio_filename)[1]
+    new_blob_path = f"{current_user.id}/{uuid.uuid4()}{ext}"
+    blob_storage.copy_audio(reminder.audio_filename, new_blob_path)
+
     template = ReminderTemplate(
         user_id=current_user.id,
         name=payload.name,
         title=reminder.title,
         phone_number=reminder.phone_number,
-        audio_filename=audio_filename,
+        audio_filename=new_blob_path,
         recurrence=reminder.recurrence,
         retry_count=reminder.retry_count,
         retry_gap_minutes=reminder.retry_gap_minutes,
@@ -122,7 +110,7 @@ def delete_template(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a template and its audio file."""
+    """Delete a template and its audio blob."""
     template = (
         db.query(ReminderTemplate)
         .filter(ReminderTemplate.id == template_id, ReminderTemplate.user_id == current_user.id)
@@ -136,11 +124,5 @@ def delete_template(
     db.delete(template)
     db.commit()
 
-    file_path = os.path.join(UPLOAD_DIR, audio_filename)
-    if os.path.exists(file_path):
-        try:
-            os.remove(file_path)
-        except OSError as e:
-            logger.warning(f"Could not delete template audio {file_path}: {e}")
-
+    blob_storage.delete_audio(audio_filename)
     return {"message": f"Template '{name}' deleted successfully"}

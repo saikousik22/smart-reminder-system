@@ -1,6 +1,9 @@
 """
-Pure DB helper functions shared by tasks.py.
-APScheduler has been removed — scheduling is now handled by Celery Beat.
+Pure DB helper functions shared by tasks.py and voice_router.py.
+
+Both functions return the newly-created Reminder (or None if not created) so the
+caller can enqueue an ETA task after committing. db.flush() is used to assign the
+new row's PK before the caller's commit, which is required to pass the ID to Celery.
 """
 
 import calendar
@@ -35,14 +38,18 @@ def compute_next_time(scheduled_time: datetime, recurrence: str) -> Optional[dat
     return None
 
 
-def _schedule_next_occurrence(db: Session, reminder: Reminder) -> None:
-    """Create the next pending occurrence for a recurring reminder."""
+def _schedule_next_occurrence(db: Session, reminder: Reminder) -> Optional[Reminder]:
+    """Create the next pending occurrence for a recurring reminder.
+
+    Returns the new Reminder (with id assigned via flush) so the caller can enqueue
+    an ETA task after its own db.commit(). Returns None if no occurrence was created.
+    """
     next_time = compute_next_time(reminder.scheduled_time, reminder.recurrence)
     if next_time is None:
-        return
+        return None
     if reminder.recurrence_end_date and next_time > reminder.recurrence_end_date:
         logger.info(f"Reminder {reminder.id}: recurrence end date reached, no next occurrence.")
-        return
+        return None
 
     next_reminder = Reminder(
         user_id=reminder.user_id,
@@ -61,13 +68,17 @@ def _schedule_next_occurrence(db: Session, reminder: Reminder) -> None:
         preferred_language=reminder.preferred_language,
     )
     db.add(next_reminder)
+    db.flush()  # assigns next_reminder.id within the current transaction
     logger.info(f"Reminder {reminder.id}: next occurrence at {next_time} (recurrence={reminder.recurrence})")
+    return next_reminder
 
 
-def _schedule_retry(db: Session, reminder: Reminder) -> None:
+def _schedule_retry(db: Session, reminder: Reminder) -> Optional[Reminder]:
     """Create a retry pending reminder if retries are configured and attempts remain.
 
     Caller is responsible for calling db.commit() after this function returns.
+    Returns the new Reminder (id assigned via flush) so the caller can enqueue an
+    ETA task after committing. Returns None if no retry was created.
 
     attempt_number is 1-indexed; retry_count is the number of retries (not total
     attempts). The condition below stops scheduling once attempt_number exceeds
@@ -76,9 +87,9 @@ def _schedule_retry(db: Session, reminder: Reminder) -> None:
       retry_count=2 → attempts 1, 2, and 3 (2 retries)
     """
     if reminder.retry_count == 0:
-        return
+        return None
     if reminder.attempt_number > reminder.retry_count:
-        return
+        return None
 
     retry_time = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(minutes=reminder.retry_gap_minutes)
     retry = Reminder(
@@ -100,7 +111,9 @@ def _schedule_retry(db: Session, reminder: Reminder) -> None:
         preferred_language=reminder.preferred_language,
     )
     db.add(retry)
+    db.flush()  # assigns retry.id within the current transaction
     logger.info(
         f"Reminder {reminder.id}: retry scheduled in {reminder.retry_gap_minutes} min "
         f"(attempt {reminder.attempt_number + 1} of {reminder.retry_count + 1})"
     )
+    return retry

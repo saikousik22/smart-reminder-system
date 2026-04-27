@@ -46,6 +46,10 @@ class Reminder(Base):
     # attempt_number=1 for original call, 2 for first retry, etc.
     attempt_number = Column(Integer, default=1, nullable=False)
     parent_reminder_id = Column(Integer, ForeignKey("SHR_V1.reminders.id"), nullable=True)
+    # System-retry counter: incremented each time trigger_call fails due to infrastructure
+    # (Twilio API error, network timeout, etc.) — independent of user-configured retry_count.
+    # Max 2 system retries (30s → 60s backoff). Status becomes 'failed_system' when exhausted.
+    system_retry_count = Column(Integer, default=0, nullable=False, server_default="0")
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc).replace(tzinfo=None), onupdate=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
     # Post-call feedback — null until the user submits a rating
@@ -69,6 +73,8 @@ class Reminder(Base):
     __table_args__ = (
         Index("ix_reminders_user_id", "user_id"),
         Index("ix_reminders_status_scheduled", "status", "scheduled_time"),
+        Index("ix_reminders_status_updated", "status", "updated_at"),
+        Index("ix_reminders_group_id", "group_id"),
         {"schema": "SHR_V1"},
     )
 
@@ -87,6 +93,7 @@ class Group(Base):
 
     __table_args__ = (
         Index("ix_groups_user_id", "user_id"),
+        Index("ix_groups_user_name", "user_id", "name"),
         {"schema": "SHR_V1"},
     )
 
@@ -120,6 +127,7 @@ class Contact(Base):
 
     __table_args__ = (
         Index("ix_contacts_user_id", "user_id"),
+        Index("ix_contacts_user_phone", "user_id", "phone_number"),
         {"schema": "SHR_V1"},
     )
 

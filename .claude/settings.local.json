@@ -4,7 +4,8 @@
       "Bash(npm install *)",
       "Bash(npm ls *)",
       "Bash(python -c ' *)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(xargs ls *)"
     ]
   }
 }
