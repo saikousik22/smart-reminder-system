@@ -6,6 +6,7 @@ Run beat:    celery -A app.celery_app beat  --loglevel=info
 
 import sys
 import os
+import ssl
 from celery import Celery
 from app.config import get_settings
 
@@ -19,7 +20,10 @@ celery_app = Celery(
 )
 
 if settings.REDIS_SSL:
-    celery_app.conf.broker_use_ssl = {"ssl_cert_reqs": "none"}
+    celery_app.conf.broker_use_ssl = {
+        "ssl_cert_reqs": ssl.CERT_NONE,
+        "ssl_check_hostname": False,
+    }
 
 # CELERY_POOL env var overrides the pool (set to "solo" on Azure App Service
 # where prefork/fork-based pools fail due to container process restrictions).
