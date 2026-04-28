@@ -79,6 +79,11 @@ class Settings(BaseSettings):
     COOKIE_SECURE: bool = False
 
     @model_validator(mode="after")
+    def normalize_urls(self) -> "Settings":
+        self.PUBLIC_BASE_URL = self.PUBLIC_BASE_URL.strip().rstrip("/")
+        return self
+
+    @model_validator(mode="after")
     def check_secrets(self) -> "Settings":
         if self.JWT_SECRET_KEY == _DEFAULT_JWT_SECRET:
             if not self.DEBUG:

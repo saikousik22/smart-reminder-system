@@ -67,6 +67,12 @@ def _validate_twilio_signature(request: Request, params: dict, path: str) -> Non
     validator = RequestValidator(settings.TWILIO_AUTH_TOKEN)
     signature = request.headers.get("X-Twilio-Signature", "")
     url = f"{settings.PUBLIC_BASE_URL}{path}"
+    logger.info(
+        "Twilio signature check | url=%r | sig_present=%s | token_tail=%s",
+        url,
+        bool(signature),
+        settings.TWILIO_AUTH_TOKEN[-4:] if settings.TWILIO_AUTH_TOKEN else "MISSING",
+    )
     if not validator.validate(url, params, signature):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Twilio signature")
 
