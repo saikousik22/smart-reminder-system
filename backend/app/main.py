@@ -21,7 +21,9 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info(f"Starting {settings.APP_NAME}...")
+    url = settings.redis_url
+    masked = url.split("@")[-1] if "@" in url else url
+    logger.info(f"Starting {settings.APP_NAME}... Redis target: {masked}")
     yield
     logger.info(f"{settings.APP_NAME} shut down.")
 
@@ -56,9 +58,78 @@ app.include_router(groups_router.router)
 
 @app.get("/", tags=["Health"])
 def health_check():
-    """Health check endpoint."""
+    return {"status": "healthy", "app": settings.APP_NAME}
+
+
+@app.get("/health/redis", tags=["Health"])
+def redis_health():
+    import redis as redis_lib
+    pwd = settings.REDIS_PASSWORD
+    try:
+        r = redis_lib.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=pwd if pwd else None,
+            ssl=settings.REDIS_SSL,
+            ssl_cert_reqs=None,
+            socket_connect_timeout=5,
+        )
+        r.ping()
+        return {
+            "status": "ok",
+            "host": settings.REDIS_HOST,
+            "port": settings.REDIS_PORT,
+            "ssl": settings.REDIS_SSL,
+            "pwd_len": len(pwd),
+            "pwd_prefix": pwd[:4] if pwd else "",
+        }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "host": settings.REDIS_HOST,
+            "port": settings.REDIS_PORT,
+            "ssl": settings.REDIS_SSL,
+            "pwd_len": len(pwd),
+            "pwd_prefix": pwd[:4] if pwd else "",
+            "detail": str(exc),
+        }
+
+
+@app.get("/health/celery", tags=["Health"])
+def celery_health():
+    import redis as redis_lib
+    from app.celery_app import celery_app
+    pwd = settings.REDIS_PASSWORD
+
+    # Check Redis for any Celery worker heartbeat keys
+    try:
+        r = redis_lib.Redis(
+            host=settings.REDIS_HOST,
+            port=settings.REDIS_PORT,
+            password=pwd if pwd else None,
+            ssl=settings.REDIS_SSL,
+            ssl_cert_reqs=None,
+            socket_connect_timeout=5,
+        )
+        celery_keys = [k.decode() for k in r.keys("*celery*") or []]
+        kombu_keys = [k.decode() for k in r.keys("*kombu*") or []]
+    except Exception as exc:
+        return {"status": "error", "detail": f"redis error: {exc}"}
+
+    # Ping workers via control channel
+    try:
+        ping = celery_app.control.inspect(timeout=5).ping()
+        workers = list(ping.keys()) if ping else []
+    except Exception as exc:
+        workers = []
+        ping_error = str(exc)
+    else:
+        ping_error = None
+
     return {
-        "status": "healthy",
-        "app": settings.APP_NAME,
-        "message": "Smart Reminder System API is running!",
+        "status": "ok" if workers else "error",
+        "workers": workers,
+        "celery_redis_keys": celery_keys,
+        "kombu_redis_keys": kombu_keys,
+        "ping_error": ping_error,
     }

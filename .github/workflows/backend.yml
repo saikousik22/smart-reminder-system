@@ -43,4 +43,10 @@ jobs:
         uses: azure/cli@v2
         with:
           inlineScript: |
-            az webapp restart --resource-group SHR-DEV --name smart-reminder-worker
+            az webapp restart --resource-group SHR-DEV --name SHR-worker
+
+      - name: Restart Celery Beat App Service
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            az webapp restart --resource-group SHR-DEV --name SHR-beat

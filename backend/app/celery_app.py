@@ -4,8 +4,8 @@ Run worker:  celery -A app.celery_app worker --loglevel=info
 Run beat:    celery -A app.celery_app beat  --loglevel=info
 """
 
-import ssl
 import sys
+import os
 from celery import Celery
 from app.config import get_settings
 
@@ -14,21 +14,20 @@ settings = get_settings()
 celery_app = Celery(
     "smart_reminder",
     broker=settings.redis_url,
-    backend=settings.redis_url,
+    backend=None,
     include=["app.tasks"],
 )
 
 if settings.REDIS_SSL:
-    _ssl_config = {"ssl_cert_reqs": ssl.CERT_NONE}
-    celery_app.conf.broker_use_ssl = _ssl_config
-    celery_app.conf.redis_backend_use_ssl = _ssl_config
+    celery_app.conf.broker_use_ssl = {"ssl_cert_reqs": "none"}
 
-# Windows does not support the default prefork (fork-based) pool.
-# 'solo' runs tasks in the main worker thread — fine for local dev.
-# On Linux/macOS the default prefork pool is used instead.
-_pool = "solo" if sys.platform == "win32" else "prefork"
+# CELERY_POOL env var overrides the pool (set to "solo" on Azure App Service
+# where prefork/fork-based pools fail due to container process restrictions).
+_default_pool = "solo" if sys.platform == "win32" else "prefork"
+_pool = os.environ.get("CELERY_POOL", _default_pool)
 
 celery_app.conf.update(
+    task_ignore_result=True,
     timezone="UTC",
     enable_utc=True,
     task_serializer="json",

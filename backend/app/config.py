@@ -58,9 +58,12 @@ class Settings(BaseSettings):
     @property
     def redis_url(self) -> str:
         scheme = "rediss" if self.REDIS_SSL else "redis"
+        suffix = "?ssl_cert_reqs=none" if self.REDIS_SSL else ""
         if self.REDIS_PASSWORD:
-            return f"{scheme}://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/0"
-        return f"{scheme}://{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+            from urllib.parse import quote
+            pwd = quote(self.REDIS_PASSWORD, safe="")
+            return f"{scheme}://:{pwd}@{self.REDIS_HOST}:{self.REDIS_PORT}/0{suffix}"
+        return f"{scheme}://{self.REDIS_HOST}:{self.REDIS_PORT}/0{suffix}"
 
     # Public URL (ngrok in dev, real URL in prod)
     PUBLIC_BASE_URL: str = "http://localhost:8000"

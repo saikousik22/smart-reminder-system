@@ -1,9 +1,15 @@
 #!/bin/sh
 set -e
 
-# When called with no args (or "api"), run migrations then start uvicorn.
-# Any other args are executed directly (e.g. celery worker/beat).
-if [ "$1" = "api" ] || [ -z "$1" ]; then
+if [ "$APP_ROLE" = "worker" ]; then
+    echo "Starting Celery worker..."
+    python healthserver.py &
+    exec celery -A app.celery_app worker --loglevel=info 2>&1
+elif [ "$APP_ROLE" = "beat" ]; then
+    echo "Starting Celery beat..."
+    python healthserver.py &
+    exec celery -A app.celery_app beat --loglevel=info 2>&1
+elif [ "$1" = "api" ] || [ -z "$1" ]; then
     echo "Starting API server..."
     exec uvicorn app.main:app --host 0.0.0.0 --port 8000
 else
