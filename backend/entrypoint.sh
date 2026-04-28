@@ -1,6 +1,8 @@
 #!/bin/sh
 set -e
 
+echo "=== ENTRYPOINT START: APP_ROLE=${APP_ROLE} ==="
+
 if [ "$APP_ROLE" = "worker" ]; then
     echo "Starting Celery worker..."
     python healthserver.py &

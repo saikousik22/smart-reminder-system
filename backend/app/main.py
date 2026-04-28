@@ -118,7 +118,7 @@ def celery_health():
 
     # Ping workers via control channel
     try:
-        ping = celery_app.control.inspect(timeout=5).ping()
+        ping = celery_app.control.inspect(timeout=10).ping()
         workers = list(ping.keys()) if ping else []
     except Exception as exc:
         workers = []
