@@ -40,6 +40,8 @@ celery_app.conf.update(
     worker_pool=_pool,
     worker_concurrency=5,
     broker_connection_retry_on_startup=True,
+    broker_pool_limit=None,
+    broker_transport_options={"socket_keepalive": True, "retry_on_timeout": True},
     beat_schedule={
         # Recovery-only: catches reminders whose ETA tasks were lost (Redis restart,
         # app crash between commit and apply_async, etc.). Runs every 10 minutes.
