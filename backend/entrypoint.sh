@@ -37,13 +37,13 @@ echo "Detected ROLE: $ROLE"
 case "$ROLE" in
     worker)
         echo "Starting Celery worker..."
-        # Don't start health server for worker
+        start_health_server
         exec celery -A app.celery_app worker --pool="${CELERY_POOL:-solo}" --loglevel=info
         ;;
     beat)
         echo "Starting Celery beat..."
-        # Don't start health server for beat
-        exec celery -A app.celery_app beat --loglevel=info
+        start_health_server
+        exec celery -A app.celery_app beat --loglevel=info --schedule=/tmp/celerybeat-schedule
         ;;
     api)
         echo "Starting API server..."
