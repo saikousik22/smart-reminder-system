@@ -66,6 +66,8 @@ def _schedule_next_occurrence(db: Session, reminder: Reminder) -> Optional[Remin
         fallback_text=reminder.fallback_text,
         fallback_sent=False,
         preferred_language=reminder.preferred_language,
+        fallback_type=reminder.fallback_type,
+        fallback_email=reminder.fallback_email,
     )
     db.add(next_reminder)
     db.flush()  # assigns next_reminder.id within the current transaction
@@ -109,6 +111,8 @@ def _schedule_retry(db: Session, reminder: Reminder) -> Optional[Reminder]:
         fallback_text=reminder.fallback_text,
         fallback_sent=False,
         preferred_language=reminder.preferred_language,
+        fallback_type=reminder.fallback_type,
+        fallback_email=reminder.fallback_email,
     )
     db.add(retry)
     db.flush()  # assigns retry.id within the current transaction

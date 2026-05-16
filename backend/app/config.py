@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     AZURE_STORAGE_CONNECTION_STRING: str = ""
     AZURE_CONTAINER_NAME: str = "audio-files"
 
+    # Resend (email fallback)
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+
     # Set True in production (requires HTTPS)
     COOKIE_SECURE: bool = False
 

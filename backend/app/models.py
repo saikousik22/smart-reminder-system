@@ -61,6 +61,10 @@ class Reminder(Base):
     fallback_sent = Column(Boolean, default=False, nullable=False, server_default="false")
     preferred_language = Column(String(10), nullable=True)
     group_id = Column(Integer, ForeignKey("SHR_V1.groups.id"), nullable=True)
+    is_deleted = Column(Boolean, default=False, nullable=False, server_default="false")
+    # Fallback delivery: "sms", "email", "both" — null treated as "sms" for backward compat
+    fallback_type = Column(String(10), nullable=True)
+    fallback_email = Column(String(255), nullable=True)
 
     # Relationships
     owner = relationship("User", back_populates="reminders")

@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, Reminder, ReminderTemplate
 from app.auth import get_current_user
-from app.schemas import ReminderResponse, MessageResponse, FeedbackSubmit
+from app.schemas import ReminderResponse, MessageResponse, FeedbackSubmit, BulkDeleteRequest
 from app.tasks import enqueue_reminder_eta
 from app.services import blob_storage
 
@@ -32,23 +32,13 @@ MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 def transcode_to_wav(source_path: str, target_path: str) -> None:
     """Transcode an audio file to WAV using ffmpeg."""
     command = [
-        "ffmpeg",
-        "-y",
-        "-i",
-        source_path,
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        target_path,
+        "ffmpeg", "-y", "-i", source_path,
+        "-ac", "1", "-ar", "16000", target_path,
     ]
     try:
         subprocess.run(
-            command,
-            check=True,
-            timeout=30,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            command, check=True, timeout=30,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(
@@ -58,7 +48,7 @@ def transcode_to_wav(source_path: str, target_path: str) -> None:
     except FileNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="ffmpeg is not installed or not available on PATH. Install ffmpeg to enable audio playback in calls.",
+            detail="ffmpeg is not installed or not available on PATH.",
         ) from exc
     except subprocess.CalledProcessError as exc:
         raise HTTPException(
@@ -74,7 +64,6 @@ def transcode_to_wav(source_path: str, target_path: str) -> None:
 
 def parse_scheduled_time(scheduled_time: str) -> datetime:
     """Parse ISO 8601 input and normalize it to naive UTC datetime."""
-    # Python < 3.11 doesn't support the 'Z' suffix in fromisoformat
     normalized = scheduled_time.replace("Z", "+00:00")
     try:
         parsed_time = datetime.fromisoformat(normalized)
@@ -83,11 +72,8 @@ def parse_scheduled_time(scheduled_time: str) -> datetime:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid datetime format. Use ISO 8601 (e.g., 2025-12-31T14:30:00Z or 2025-12-31T14:30:00+05:30)",
         )
-
     if parsed_time.tzinfo is None:
-        # No timezone info — treat as UTC (frontend should always send UTC)
         parsed_time = parsed_time.replace(tzinfo=timezone.utc)
-
     return parsed_time.astimezone(timezone.utc).replace(tzinfo=None)
 
 
@@ -113,7 +99,6 @@ def save_audio_file(file: UploadFile, user_id: int) -> str:
             detail=f"Audio format '{ext}' not supported. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
         )
 
-    # Stream upload to a temp file with early size-limit abort
     tmp_fd, temp_path = tempfile.mkstemp(suffix=ext)
     total_bytes = 0
     try:
@@ -139,7 +124,6 @@ def save_audio_file(file: UploadFile, user_id: int) -> str:
             detail="Failed to save audio file.",
         ) from exc
 
-    # Transcode unsupported formats to WAV for Twilio playback
     final_path = temp_path
     final_ext = ext
     if ext not in TWILIO_SUPPORTED_EXTENSIONS:
@@ -147,12 +131,15 @@ def save_audio_file(file: UploadFile, user_id: int) -> str:
         os.close(wav_fd)
         try:
             transcode_to_wav(temp_path, wav_path)
+            final_path = wav_path
+            final_ext = ".wav"
+        except Exception:
+            # BUG FIX: clean up the empty wav file created by mkstemp if transcode fails
+            _safe_remove(wav_path)
+            raise
         finally:
             _safe_remove(temp_path)
-        final_path = wav_path
-        final_ext = ".wav"
 
-    # Upload to Azure Blob Storage at container/{user_id}/{uuid}.ext
     blob_path = f"{user_id}/{uuid.uuid4()}{final_ext}"
     content_type = "audio/wav" if final_ext == ".wav" else "audio/mpeg"
     try:
@@ -175,9 +162,19 @@ def delete_audio_file(blob_path: str) -> None:
 
 VALID_RECURRENCES = {"daily", "weekly", "monthly", "weekdays"}
 VALID_STATUSES = {"pending", "processing", "calling", "answered", "no-answer", "busy", "failed", "failed_system"}
-# failed_system = all system retries exhausted (infra failure, not user behaviour)
 _TERMINAL_STATUSES = {"answered", "no-answer", "busy", "failed", "failed_system"}
+# Only reset to pending when the reminder hasn't been picked up by a worker yet
+_RESCHEDULE_ELIGIBLE = {"pending"}
 _E164_RE = re.compile(r"^\+[1-9]\d{0,14}$")
+
+# --- base query helper ---
+
+def _active_reminders(db: Session, user_id: int):
+    """Base query: reminders owned by user that have not been soft-deleted."""
+    return (
+        db.query(Reminder)
+        .filter(Reminder.user_id == user_id, ~Reminder.is_deleted)
+    )
 
 
 @router.post("", response_model=ReminderResponse, status_code=status.HTTP_201_CREATED)
@@ -194,6 +191,8 @@ async def create_reminder(
     original_text: Optional[str] = Form(None),
     fallback_text: Optional[str] = Form(None),
     preferred_language: Optional[str] = Form(None),
+    fallback_type: Optional[str] = Form(None),
+    fallback_email: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -216,6 +215,13 @@ async def create_reminder(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="retry_count must be 0, 1, or 2")
     if not (5 <= retry_gap_minutes <= 60):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="retry_gap_minutes must be between 5 and 60")
+
+    # BUG FIX: recurrence_end_date requires recurrence to be set
+    if recurrence_end_date and not recurrence:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="recurrence_end_date requires recurrence to be set.",
+        )
 
     parsed_end_date = parse_scheduled_time(recurrence_end_date) if recurrence_end_date else None
 
@@ -258,14 +264,13 @@ async def create_reminder(
         original_text=original_text or None,
         fallback_text=fallback_text or None,
         preferred_language=preferred_language or None,
+        fallback_type=fallback_type or None,
+        fallback_email=fallback_email or None,
     )
     db.add(reminder)
     db.commit()
     db.refresh(reminder)
 
-    # ETA task: fires trigger_call at exactly scheduled_time.
-    # If Redis is unavailable this raises — the reminder is already in DB as 'pending'
-    # and the 5-min recovery beat will pick it up.
     try:
         enqueue_reminder_eta(reminder)
     except Exception as exc:
@@ -277,20 +282,70 @@ async def create_reminder(
 @router.get("", response_model=list[ReminderResponse])
 def get_reminders(
     status_filter: Optional[str] = None,
+    search: Optional[str] = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Get all reminders for the current user, optionally filtered by status."""
+    """Get all reminders for the current user. Supports ?status_filter= and ?search= (title or phone)."""
     if status_filter and status_filter not in VALID_STATUSES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status filter. Must be one of: {', '.join(sorted(VALID_STATUSES))}",
         )
-    query = db.query(Reminder).filter(Reminder.user_id == current_user.id)
+    query = _active_reminders(db, current_user.id)
     if status_filter:
         query = query.filter(Reminder.status == status_filter)
-    reminders = query.order_by(Reminder.scheduled_time.desc()).all()
-    return reminders
+    if search:
+        term = f"%{search}%"
+        query = query.filter(
+            (Reminder.title.ilike(term)) | (Reminder.phone_number.ilike(term))
+        )
+    return query.order_by(Reminder.scheduled_time.desc()).all()
+
+
+@router.post("/bulk-delete", response_model=MessageResponse)
+def bulk_delete_reminders(
+    payload: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Soft-delete multiple reminders by ID. Only deletes reminders owned by the current user."""
+    reminders = (
+        _active_reminders(db, current_user.id)
+        .filter(Reminder.id.in_(payload.ids))
+        .all()
+    )
+    if not reminders:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No matching reminders found.")
+
+    audio_filenames = [r.audio_filename for r in reminders]
+    reminder_ids = {r.id for r in reminders}
+
+    for r in reminders:
+        r.is_deleted = True
+    db.commit()
+
+    # Best-effort blob deletion: only delete audio not shared with other non-deleted reminders
+    for audio_filename in set(audio_filenames):
+        other_uses = (
+            db.query(Reminder)
+            .filter(
+                Reminder.audio_filename == audio_filename,
+                Reminder.id.notin_(reminder_ids),
+                ~Reminder.is_deleted,
+            )
+            .count()
+        )
+        if other_uses == 0:
+            try:
+                delete_audio_file(audio_filename)
+            except Exception as exc:
+                logger.warning(f"Bulk delete: could not delete blob {audio_filename}: {exc}")
+
+    return {"message": f"Deleted {len(reminders)} reminder(s) successfully."}
+
+
+
 
 
 @router.get("/{reminder_id}", response_model=ReminderResponse)
@@ -300,11 +355,7 @@ def get_reminder(
     db: Session = Depends(get_db),
 ):
     """Get a single reminder by ID."""
-    reminder = (
-        db.query(Reminder)
-        .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
-        .first()
-    )
+    reminder = _active_reminders(db, current_user.id).filter(Reminder.id == reminder_id).first()
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
     return reminder
@@ -324,15 +375,13 @@ async def update_reminder(
     original_text: Optional[str] = Form(None),
     fallback_text: Optional[str] = Form(None),
     preferred_language: Optional[str] = Form(None),
+    fallback_type: Optional[str] = Form(None),
+    fallback_email: Optional[str] = Form(None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Update an existing reminder. Only provided fields are updated."""
-    reminder = (
-        db.query(Reminder)
-        .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
-        .first()
-    )
+    reminder = _active_reminders(db, current_user.id).filter(Reminder.id == reminder_id).first()
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
 
@@ -360,7 +409,6 @@ async def update_reminder(
         reminder.audio_filename = save_audio_file(audio_file, current_user.id)
 
     if recurrence is not None:
-        # Empty string or "none" explicitly clears recurrence
         if recurrence and recurrence not in VALID_RECURRENCES:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -368,6 +416,13 @@ async def update_reminder(
             )
         reminder.recurrence = recurrence if recurrence in VALID_RECURRENCES else None
     if recurrence_end_date is not None:
+        # BUG FIX: recurrence_end_date requires recurrence to be set
+        effective_recurrence = reminder.recurrence if recurrence is None else (recurrence if recurrence in VALID_RECURRENCES else None)
+        if recurrence_end_date and not effective_recurrence:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="recurrence_end_date requires recurrence to be set.",
+            )
         parsed_end = parse_scheduled_time(recurrence_end_date) if recurrence_end_date else None
         if parsed_end and parsed_end < reminder.scheduled_time:
             raise HTTPException(
@@ -391,23 +446,26 @@ async def update_reminder(
         reminder.fallback_text = fallback_text or None
     if preferred_language is not None:
         reminder.preferred_language = preferred_language or None
+    if fallback_type is not None:
+        reminder.fallback_type = fallback_type or None
+    if fallback_email is not None:
+        reminder.fallback_email = fallback_email or None
 
     delivery_field_changed = (
         scheduled_time is not None or audio_file is not None or phone_number is not None
     )
-    needs_reschedule = delivery_field_changed and reminder.status not in _TERMINAL_STATUSES
+    # BUG FIX: only reschedule when status is still "pending" (not yet picked up by a worker).
+    # Resetting a "calling" or "processing" reminder would race with an active call.
+    needs_reschedule = delivery_field_changed and reminder.status in _RESCHEDULE_ELIGIBLE
     if needs_reschedule:
         reminder.status = "pending"
 
     db.commit()
     db.refresh(reminder)
 
-    # Delete old file only after a successful commit so we never lose it on rollback
     if old_audio_filename:
         delete_audio_file(old_audio_filename)
 
-    # Re-enqueue ETA when delivery fields changed (new scheduled_time or same time).
-    # The stale-ETA guard in trigger_call handles any overlap with the old ETA task.
     if needs_reschedule:
         try:
             enqueue_reminder_eta(reminder)
@@ -425,11 +483,7 @@ def submit_feedback(
     db: Session = Depends(get_db),
 ):
     """Submit or update a rating (1–5) and optional comment for a completed reminder."""
-    reminder = (
-        db.query(Reminder)
-        .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
-        .first()
-    )
+    reminder = _active_reminders(db, current_user.id).filter(Reminder.id == reminder_id).first()
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
 
@@ -452,31 +506,36 @@ def delete_reminder(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Delete a reminder and its associated audio file."""
-    reminder = (
-        db.query(Reminder)
-        .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
-        .first()
-    )
+    """Soft-delete a reminder. The DB row is kept (is_deleted=True) and the audio blob
+    is deleted best-effort afterward so a blob failure never loses the DB record."""
+    reminder = _active_reminders(db, current_user.id).filter(Reminder.id == reminder_id).first()
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
 
     audio_filename = reminder.audio_filename
     title = reminder.title
 
-    # Check before deletion: retry children and recurrence siblings share the same
-    # audio_filename string. Only delete the file if no other reminder references it.
+    # Check before soft-delete: only delete the blob if no other active reminder references it
     other_uses = (
         db.query(Reminder)
-        .filter(Reminder.audio_filename == audio_filename, Reminder.id != reminder_id)
+        .filter(
+            Reminder.audio_filename == audio_filename,
+            Reminder.id != reminder_id,
+            ~Reminder.is_deleted,
+        )
         .count()
     )
 
-    db.delete(reminder)
+    # IMPROVEMENT: soft-delete first — DB record is preserved even if blob deletion fails
+    reminder.is_deleted = True
     db.commit()
 
+    # Best-effort blob deletion after successful soft-delete
     if not other_uses:
-        delete_audio_file(audio_filename)
+        try:
+            delete_audio_file(audio_filename)
+        except Exception as exc:
+            logger.warning(f"Reminder {reminder_id}: could not delete blob {audio_filename}: {exc}")
 
     return {"message": f"Reminder '{title}' deleted successfully"}
 
@@ -488,15 +547,10 @@ def export_reminder_ics(
     db: Session = Depends(get_db),
 ):
     """Export a reminder as a downloadable .ics calendar file."""
-    reminder = (
-        db.query(Reminder)
-        .filter(Reminder.id == reminder_id, Reminder.user_id == current_user.id)
-        .first()
-    )
+    reminder = _active_reminders(db, current_user.id).filter(Reminder.id == reminder_id).first()
     if not reminder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Reminder not found")
 
-    # scheduled_time is stored as naive UTC
     dt_start = reminder.scheduled_time.replace(tzinfo=timezone.utc)
     dt_end = dt_start + timedelta(minutes=5)
     dt_stamp = datetime.now(timezone.utc)

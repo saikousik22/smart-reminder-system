@@ -37,6 +37,7 @@ from app.models import Reminder
 from app.config import get_settings
 from app.scheduler import _schedule_retry, _schedule_next_occurrence
 from app.services.sms_service import send_sms
+from app.services.email_service import send_reminder_email
 from app.tasks import enqueue_reminder_eta, _handle_system_failure
 from app.services.blob_storage import generate_sas_url
 
@@ -77,16 +78,19 @@ def _validate_twilio_signature(request: Request, params: dict, path: str) -> Non
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid Twilio signature")
 
 
-def _try_send_fallback_sms(db: Session, reminder: Reminder) -> None:
-    """Send an SMS fallback for *reminder* if not already sent (idempotent).
+def _try_send_fallback(db: Session, reminder: Reminder) -> None:
+    """Send fallback notification (SMS, email, or both) when a call ultimately fails.
 
-    Message priority:
-      1. reminder.fallback_text  (user-provided / translated text)
-      2. "You missed a reminder: <original_text>"
-      3. "You missed a reminder: <title>"
+    Idempotent: fallback_sent flag is checked first so at most one delivery
+    attempt is made even if Twilio fires the status callback twice.
+
+    fallback_type controls delivery:
+      "sms"   — SMS only (default / backward-compat when field is null)
+      "email" — email only  (requires fallback_email to be set)
+      "both"  — SMS + email
     """
     if reminder.fallback_sent:
-        logger.info(f"Reminder {reminder.id}: SMS fallback already sent — skipping.")
+        logger.info("Reminder %d: fallback already sent — skipping.", reminder.id)
         return
 
     message = reminder.fallback_text
@@ -94,12 +98,28 @@ def _try_send_fallback_sms(db: Session, reminder: Reminder) -> None:
         source = reminder.original_text or reminder.title
         message = f"You missed a reminder: {source}"
 
-    success = send_sms(reminder.phone_number, message)
-    if success:
+    fallback_type = reminder.fallback_type or "sms"
+    sent = False
+
+    if fallback_type in ("sms", "both"):
+        if send_sms(reminder.phone_number, message):
+            sent = True
+            logger.info("Reminder %d: SMS fallback sent to %s.", reminder.id, reminder.phone_number)
+        else:
+            logger.error("Reminder %d: SMS fallback failed for %s.", reminder.id, reminder.phone_number)
+
+    if fallback_type in ("email", "both"):
+        if reminder.fallback_email:
+            if send_reminder_email(reminder.fallback_email, reminder.title, message):
+                sent = True
+                logger.info("Reminder %d: email fallback sent to %s.", reminder.id, reminder.fallback_email)
+            else:
+                logger.error("Reminder %d: email fallback failed for %s.", reminder.id, reminder.fallback_email)
+        else:
+            logger.warning("Reminder %d: email fallback selected but no fallback_email set.", reminder.id)
+
+    if sent:
         reminder.fallback_sent = True
-        logger.info(f"Reminder {reminder.id}: SMS fallback sent to {reminder.phone_number}.")
-    else:
-        logger.error(f"Reminder {reminder.id}: SMS fallback failed for {reminder.phone_number}.")
 
 
 # Status callback MUST be declared before /voice/{reminder_id} so FastAPI
@@ -121,11 +141,17 @@ async def voice_status_callback(reminder_id: int, request: Request, db: Session 
         logger.debug(f"Reminder {reminder_id}: ignoring intermediate CallStatus='{call_status}'")
         return Response(status_code=200)
 
-    reminder = db.query(Reminder).filter(Reminder.id == reminder_id).first()
-
-    # Only transition from "calling" — avoids overwriting if stuck-recovery
-    # already marked this reminder as failed.
-    if not reminder or reminder.status != "calling":
+    # BUG FIX: Atomic claim with row-level lock (SELECT FOR UPDATE).
+    # If Twilio fires duplicate status callbacks concurrently, the second request
+    # blocks on the lock; when it acquires it the status is no longer "calling"
+    # so it returns 200 harmlessly. This prevents double-scheduling of retries.
+    reminder = (
+        db.query(Reminder)
+        .filter(Reminder.id == reminder_id, Reminder.status == "calling")
+        .with_for_update()
+        .first()
+    )
+    if not reminder:
         return Response(status_code=200)
 
     new_eta_reminders = []  # collect new reminders that need ETA tasks after commit
@@ -160,7 +186,7 @@ async def voice_status_callback(reminder_id: int, request: Request, db: Session 
                 next_r = _schedule_next_occurrence(db, reminder)
                 if next_r:
                     new_eta_reminders.append(next_r)
-            _try_send_fallback_sms(db, reminder)
+            _try_send_fallback(db, reminder)
             logger.info(
                 f"Reminder {reminder_id}: final attempt {call_status} — "
                 f"SMS fallback attempted."
@@ -182,7 +208,7 @@ async def voice_status_callback(reminder_id: int, request: Request, db: Session 
                 next_r = _schedule_next_occurrence(db, reminder)
                 if next_r:
                     new_eta_reminders.append(next_r)
-            _try_send_fallback_sms(db, reminder)
+            _try_send_fallback(db, reminder)
             db.commit()
             logger.error(
                 f"Reminder {reminder_id}: system retries exhausted after "

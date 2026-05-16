@@ -107,6 +107,7 @@ def recover_missed_reminders():
             .filter(
                 Reminder.status.in_(["calling", "processing"]),
                 Reminder.updated_at <= stuck_cutoff,
+                ~Reminder.is_deleted,
             )
             .all()
         )
@@ -148,6 +149,7 @@ def recover_missed_reminders():
             .filter(
                 Reminder.status == "pending",
                 Reminder.scheduled_time <= recovery_cutoff,
+                ~Reminder.is_deleted,
             )
             .limit(100)
             .all()
@@ -201,6 +203,7 @@ def trigger_call(reminder_id: int):
             .filter(
                 Reminder.id == reminder_id,
                 Reminder.status.in_(["pending", "processing"]),
+                ~Reminder.is_deleted,
             )
             .update({"status": "processing"}, synchronize_session=False)
         )

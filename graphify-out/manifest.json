@@ -1,0 +1,338 @@
+{
+  "D:\\smart-reminder-system\\deploy.ps1": {
+    "mtime": 1777274266.5249567,
+    "hash": "05af0a63e632f5d0bd3314c0d342f9f9"
+  },
+  "D:\\smart-reminder-system\\backend\\debug_celery.py": {
+    "mtime": 1777359073.1760547,
+    "hash": "53aca11b6b528538d2d708ed845ace72"
+  },
+  "D:\\smart-reminder-system\\backend\\healthserver.py": {
+    "mtime": 1777359073.1760547,
+    "hash": "663962e7fd297ad1eb74cb25965962ef"
+  },
+  "D:\\smart-reminder-system\\backend\\validate_setup.py": {
+    "mtime": 1777359073.550575,
+    "hash": "9c8c34ab9887fde774f40c5be9e90372"
+  },
+  "D:\\smart-reminder-system\\backend\\alembic\\env.py": {
+    "mtime": 1777112306.6316772,
+    "hash": "b07db3c4435d69ed1681293da959958b"
+  },
+  "D:\\smart-reminder-system\\backend\\alembic\\Versions\\171bbe9d0e08_initial.py": {
+    "mtime": 1777189426.6026218,
+    "hash": "57dfb3f6846d817d4cdb64bc68726c12"
+  },
+  "D:\\smart-reminder-system\\backend\\alembic\\Versions\\b1a2c3d4e5f6_add_is_deleted_to_reminders.py": {
+    "mtime": 1777374446.0461655,
+    "hash": "86e0773fde092c9edac9e0fad70a9345"
+  },
+  "D:\\smart-reminder-system\\backend\\alembic\\Versions\\c2d3e4f5a6b7_add_email_fallback_to_reminders.py": {
+    "mtime": 1777379280.3715105,
+    "hash": "b879a87e3127f9279558ca135e6c282b"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\auth.py": {
+    "mtime": 1776748328.7478702,
+    "hash": "5aad932608ba80482d2995c9203f8426"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\celery_app.py": {
+    "mtime": 1777356495.4164026,
+    "hash": "4ea5438974191ffbcc3d7a3f947f10c6"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\config.py": {
+    "mtime": 1777379240.367718,
+    "hash": "c1704801783a90de5c1d12d0ea657cff"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\database.py": {
+    "mtime": 1777112292.2119215,
+    "hash": "ecbc1ec7284611d763feaa3b1797f499"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\main.py": {
+    "mtime": 1777374705.1084049,
+    "hash": "27de247dff647a36cede941cad4015a4"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\models.py": {
+    "mtime": 1777379269.7340312,
+    "hash": "0ac2fa60a2a78df5e105e2a077b6b041"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\rate_limit.py": {
+    "mtime": 1777374625.687263,
+    "hash": "f5658e8bbff3f173f910c451d8d4d5df"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\scheduler.py": {
+    "mtime": 1777379569.2469206,
+    "hash": "edb1feb820faabd496b93f6f811c81fb"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\schemas.py": {
+    "mtime": 1778416371.2309203,
+    "hash": "1eba815792d7874d3a629f9bbaac8646"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\tasks.py": {
+    "mtime": 1777374678.8603077,
+    "hash": "7689dae1f832caaf75be124f8b8b491a"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\twilio_service.py": {
+    "mtime": 1776588651.9013417,
+    "hash": "3fbe0428eb7950c38edcd298a636d01a"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\__init__.py": {
+    "mtime": 1776424807.093282,
+    "hash": "2a37317badea5b98b51875bd2ef5cc05"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\auth_router.py": {
+    "mtime": 1777374641.4444437,
+    "hash": "38188e5bec71f9843d0a10fb38be2891"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\contacts_router.py": {
+    "mtime": 1776940393.0410872,
+    "hash": "7a72189fbb8eed09eaca9b6a8b7fd337"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\dashboard_router.py": {
+    "mtime": 1776942820.1717453,
+    "hash": "edbacbbd77a932ebada4e3a59c2a8533"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\groups_router.py": {
+    "mtime": 1777115324.3435006,
+    "hash": "e85bf8266f470b7c54ab23fe9778dc00"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\reminder_router.py": {
+    "mtime": 1777379547.0274782,
+    "hash": "a1b4b1663cdfe59dc2c53640d0ac85cb"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\template_router.py": {
+    "mtime": 1777114753.2773206,
+    "hash": "caf943b50f81c560354e21d5f76aa831"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\translate_router.py": {
+    "mtime": 1776753250.429147,
+    "hash": "a4653b11f2fc08e03f6ade3a48aa7d38"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\voice_router.py": {
+    "mtime": 1777379351.005081,
+    "hash": "b113c3048c2e9ae0c887a0ff8be66138"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\routers\\__init__.py": {
+    "mtime": 1776941624.1590233,
+    "hash": "745ab062a93dd3848b021108bf218847"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\services\\blob_storage.py": {
+    "mtime": 1777114927.515469,
+    "hash": "64de01921bda59faf4d1f6d596b91f4f"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\services\\email_service.py": {
+    "mtime": 1777379303.585479,
+    "hash": "9de84e9ede972d1e93b29bf9c3b5061e"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\services\\sms_service.py": {
+    "mtime": 1776753229.1496727,
+    "hash": "14a33f40bc88ad7b86036b66cb150c89"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\services\\translate_service.py": {
+    "mtime": 1776753237.6607819,
+    "hash": "55b31cbb24e25789e5fdc333e8296db9"
+  },
+  "D:\\smart-reminder-system\\backend\\app\\services\\__init__.py": {
+    "mtime": 1776753222.9502473,
+    "hash": "d41d8cd98f00b204e9800998ecf8427e"
+  },
+  "D:\\smart-reminder-system\\frontend\\postcss.config.js": {
+    "mtime": 1776427446.0185907,
+    "hash": "ef3ba2a81ba19f8ea5ddf625521e96f0"
+  },
+  "D:\\smart-reminder-system\\frontend\\vite.config.js": {
+    "mtime": 1776583687.210862,
+    "hash": "c63dcb269a7a47e355c8b0d8a1151eaa"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\App.jsx": {
+    "mtime": 1776941781.5781934,
+    "hash": "b45e3f9018b40e30c2a1e15ca6736dbb"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\main.jsx": {
+    "mtime": 1776427461.4055738,
+    "hash": "31aaa21dab4aaa4acbf5c673b947aa06"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\api\\axios.js": {
+    "mtime": 1776939158.9679043,
+    "hash": "33f6c823dbad333429726fca3a14c836"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\AudioRecorder.jsx": {
+    "mtime": 1776748442.9155571,
+    "hash": "a5616e1b4993c5b0cef9adce808b1586"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\AudioUploader.jsx": {
+    "mtime": 1776685968.3201735,
+    "hash": "a5c53e77174b7d43d14b005e7d96bdb6"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\CalendarView.jsx": {
+    "mtime": 1776750127.4174235,
+    "hash": "0f3a1a4c212bcac148007bdf26ae6ddb"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\Navbar.jsx": {
+    "mtime": 1776941788.0280547,
+    "hash": "aa6598f833216fd235a385cc15aa8ca6"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\ProtectedRoute.jsx": {
+    "mtime": 1776427497.271778,
+    "hash": "7616a04fba47db11e9d6f423a1285d39"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\components\\ReminderCard.jsx": {
+    "mtime": 1776941766.8689947,
+    "hash": "61ed50885724f79f8494c1908468d1b7"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\context\\AuthContext.jsx": {
+    "mtime": 1776748485.7674143,
+    "hash": "6ea9a3be0622afdbab0d45657774e02a"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\Contacts.jsx": {
+    "mtime": 1776940451.379508,
+    "hash": "2909c5ca7d15b277f1db72e5a92e976e"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\CreateReminder.jsx": {
+    "mtime": 1777379628.9439466,
+    "hash": "2fc160104dccd3162f2825abcdd1833a"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\Dashboard.jsx": {
+    "mtime": 1777374761.5399215,
+    "hash": "d2ce3a6d1b45c7b5ea40f5f44e863af1"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\DashboardAnalytics.jsx": {
+    "mtime": 1776942891.6351683,
+    "hash": "afeaba97176f252e0a407b8807368476"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\Groups.jsx": {
+    "mtime": 1776941675.5775194,
+    "hash": "7b924c5819ed2ad87e595c6ffb60a355"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\Login.jsx": {
+    "mtime": 1776686048.462109,
+    "hash": "13792cc7554cc51d8ef4ccd2743b22f9"
+  },
+  "D:\\smart-reminder-system\\frontend\\src\\pages\\Signup.jsx": {
+    "mtime": 1776686051.9146252,
+    "hash": "18e08775680a3d3c05a7980e366499db"
+  },
+  "D:\\smart-reminder-system\\AZURE_APP_SERVICES_DEPLOY.md": {
+    "mtime": 1777274232.9341524,
+    "hash": "e95beb1f6d60ed9bb3be9500dff358f9"
+  },
+  "D:\\smart-reminder-system\\AZURE_DEPLOYMENT.md": {
+    "mtime": 1777009137.4989133,
+    "hash": "7be5e1760f4569880a1c01620366680a"
+  },
+  "D:\\smart-reminder-system\\AZURE_SETUP.md": {
+    "mtime": 1777359073.1660528,
+    "hash": "3ea1d5334aa8542a7df17a44a2f9ea85"
+  },
+  "D:\\smart-reminder-system\\BUG_REPORT.md": {
+    "mtime": 1776938772.5735843,
+    "hash": "06c97abfd940cedcf89da7529b139226"
+  },
+  "D:\\smart-reminder-system\\CODEBASE_COMPLETE_FLOW.md": {
+    "mtime": 1777025509.5080218,
+    "hash": "fdc3a6c33188f63daf217dd22abb3462"
+  },
+  "D:\\smart-reminder-system\\docker-compose.yml": {
+    "mtime": 1777352460.655041,
+    "hash": "723d4dddff246b49deb52ecc1bcba7d7"
+  },
+  "D:\\smart-reminder-system\\PROJECT_PLAN.md": {
+    "mtime": 1776425318.1525168,
+    "hash": "046cae0c50a3c64f30f34a2334fd9260"
+  },
+  "D:\\smart-reminder-system\\QUICK_DEPLOY_REFERENCE.md": {
+    "mtime": 1777274266.0559323,
+    "hash": "d641b68a1989a97ea64d0ef42fdf5508"
+  },
+  "D:\\smart-reminder-system\\README.md": {
+    "mtime": 1777271700.1596024,
+    "hash": "715d4548026c3bebea72277e91a7544d"
+  },
+  "D:\\smart-reminder-system\\RUN.md": {
+    "mtime": 1776585850.0957108,
+    "hash": "ffe097338e279ef159eac2c04287aa69"
+  },
+  "D:\\smart-reminder-system\\backend\\requirements.txt": {
+    "mtime": 1777379246.8049874,
+    "hash": "249cd4e8785280da2ce358a1e9bb7126"
+  },
+  "D:\\smart-reminder-system\\frontend\\index.html": {
+    "mtime": 1776427451.0674913,
+    "hash": "57636a61eab9cb879dcad0c35566be83"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\00509f5a-0119-48f8-bddd-4c86d966fd98.webm": {
+    "mtime": 1776585277.7760642,
+    "hash": "8e0a495fe63f0d1716b93882ea0fd580"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\013226da-6d7d-44d5-9362-d9652648678c.webm": {
+    "mtime": 1776584740.0855117,
+    "hash": "ab7d4f707fc819d062600bd00e45abd0"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\0545fa3f-9188-4a2f-9bb0-7aea7b73aced.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\0e17bd63-b7ab-4e27-aa1d-bcac06c0d2f7.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\2b3bb20b-a6c1-4890-ac90-b331e226d7cc.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\5315b4fb-fc90-4b83-800c-3921b1891d70.wav": {
+    "mtime": 1776589316.8820457,
+    "hash": "a3065fa13a1071414ea03cb1ba45b35d"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\591faad4-f560-4e79-a9d3-91aa062902e9.webm": {
+    "mtime": 1776585119.3224661,
+    "hash": "35a97f451188a51fbff940871829bfac"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\75bd55da-4946-4f10-a657-e7c58375a0d1.wav": {
+    "mtime": 1776587509.4238417,
+    "hash": "66677a0e15314ec3585f3d8d263a9298"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\76ed58bf-9d2f-427e-a4d1-a207c5cda404.wav": {
+    "mtime": 1776585665.9130661,
+    "hash": "067d1129ee0926985a379f11efb3df90"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\7790e06d-9356-43c1-952b-51ef69278807.wav": {
+    "mtime": 1776754165.1861224,
+    "hash": "08b9585534b9b70ace33569334932c9b"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\8f5f59b0-20f1-4960-adc3-0bd93e545bb9.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\9b333806-2ab8-4994-8ebd-b0d3f18e33de.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\9ce7774f-0153-4609-b1f9-97df27ad9ee1.wav": {
+    "mtime": 1776589142.847619,
+    "hash": "b1cbc25b77379df56acd254e086a0f48"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\a028a6aa-901d-43b8-842b-104cd03d8c2e.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\bd665472-b1a5-4ec1-886c-720f2a86d418.wav": {
+    "mtime": 1776662815.4969943,
+    "hash": "0036f98cb5d37fd9f53fd1839d38d7be"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\e12445f3-6416-4a17-9552-56e70bdb3113.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\f183c2b3-3625-4113-af95-41af27f0ae80.wav": {
+    "mtime": 1776668784.7984295,
+    "hash": "32f51aed52a356d226acaff6a548e085"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\fcd82976-1e16-4238-a879-c206e287ccaf.wav": {
+    "mtime": 1776681215.377386,
+    "hash": "00182c3b08100fe35fa9b632cb06c7a5"
+  },
+  "D:\\smart-reminder-system\\backend\\uploads\\ff604b55-89a4-4e94-a1a0-ca8116b8e591.wav": {
+    "mtime": 1776666415.05449,
+    "hash": "ae0a6769a6c659bf90ed9baf21d0c987"
+  }
+}

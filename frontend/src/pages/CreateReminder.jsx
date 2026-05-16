@@ -89,7 +89,9 @@ const CreateReminder = () => {
   const [loading, setLoading] = useState(isEdit);
   const [existingAudioUrl, setExistingAudioUrl] = useState(null);
 
-  // SMS fallback state
+  // Fallback state
+  const [fallbackType, setFallbackType]             = useState('none');
+  const [fallbackEmail, setFallbackEmail]           = useState('');
   const [originalText, setOriginalText]             = useState('');
   const [preferredLanguage, setPreferredLanguage]   = useState('');
   const [fallbackText, setFallbackText]             = useState('');
@@ -161,7 +163,9 @@ const CreateReminder = () => {
             const endDt = parseUtcDate(r.recurrence_end_date);
             setRecurrenceEndDate(endDt.toLocaleDateString('en-CA'));
           }
-          if (r.original_text) setOriginalText(r.original_text);
+          if (r.fallback_type)  setFallbackType(r.fallback_type);
+          if (r.fallback_email) setFallbackEmail(r.fallback_email);
+          if (r.original_text)  setOriginalText(r.original_text);
           if (r.fallback_text)  setFallbackText(r.fallback_text);
           if (r.preferred_language) {
             setPreferredLanguage(r.preferred_language);
@@ -269,6 +273,8 @@ const CreateReminder = () => {
     }
     data.append('retry_count', retryEnabled ? String(retryCount) : '0');
     data.append('retry_gap_minutes', String(retryGapMinutes));
+    if (fallbackType && fallbackType !== 'none') data.append('fallback_type', fallbackType);
+    if (fallbackEmail.trim()) data.append('fallback_email', fallbackEmail.trim());
     if (originalText.trim())  data.append('original_text', originalText.trim());
     if (fallbackText.trim())  data.append('fallback_text', fallbackText.trim());
     if (preferredLanguage)    data.append('preferred_language', preferredLanguage);
@@ -733,95 +739,153 @@ const CreateReminder = () => {
           )}
         </section>
 
-        {/* SMS Fallback Section */}
-        <section className="glass-card p-6 rounded-2xl space-y-4">
+        {/* Fallback Section */}
+        <section className="glass-card p-6 rounded-2xl space-y-5">
           <h2 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-primary-400" />
-            SMS Fallback (optional)
+            Fallback Notification (optional)
           </h2>
           <p className="text-xs text-slate-500">
-            If the call is not answered after all attempts, an SMS will be sent automatically.
-            Type your message in English, choose a language, and translate for preview.
+            If the call is not answered after all attempts, we can send you a fallback notification.
           </p>
 
+          {/* Fallback type selector */}
           <div className="space-y-2">
-            <label className="text-xs font-medium text-slate-400">Fallback message (English)</label>
-            <textarea
-              value={originalText}
-              onChange={e => { setOriginalText(e.target.value); setTranslationConfirmed(false); }}
-              placeholder="e.g., You missed your medication reminder."
-              maxLength={1000}
-              rows={2}
-              className="w-full glass-input text-sm resize-none"
-            />
+            <label className="text-xs font-medium text-slate-400">Notify me via</label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { value: 'none',  label: 'None' },
+                { value: 'sms',   label: '💬 SMS' },
+                { value: 'email', label: '✉️ Email' },
+                { value: 'both',  label: '📲 Both' },
+              ].map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setFallbackType(opt.value)}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                    fallbackType === opt.value
+                      ? 'bg-primary-600 border-primary-500 text-white'
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
-                <Languages className="w-3.5 h-3.5" />
-                Translate to
-              </label>
-              <select
-                value={preferredLanguage}
-                onChange={e => { setPreferredLanguage(e.target.value); setTranslationConfirmed(false); }}
-                className="glass-input w-full text-sm"
+          <AnimatePresence>
+            {fallbackType !== 'none' && (
+              <motion.div
+                key="fallback-details"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-4 overflow-hidden"
               >
-                <option value="">— send in English —</option>
-                {LANGUAGE_OPTIONS.map(l => (
-                  <option key={l.code} value={l.code}>{l.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-end">
-              <button
-                type="button"
-                onClick={handleTranslate}
-                disabled={translating || !originalText.trim() || !preferredLanguage}
-                className="w-full btn-secondary py-2.5 flex items-center justify-center gap-2 text-sm disabled:opacity-40"
-              >
-                {translating ? (
-                  <Loader className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Languages className="w-4 h-4" />
+                {/* Email address — shown for email / both */}
+                {(fallbackType === 'email' || fallbackType === 'both') && (
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-slate-400">Your email address</label>
+                    <input
+                      type="email"
+                      value={fallbackEmail}
+                      onChange={e => setFallbackEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="glass-input w-full text-sm"
+                    />
+                  </div>
                 )}
-                {translating ? 'Translating…' : 'Translate & Preview'}
-              </button>
-            </div>
-          </div>
 
-          {fallbackText && (
-            <motion.div
-              initial={{ opacity: 0, y: -4 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-2"
-            >
-              <label className="text-xs font-medium text-slate-400">
-                Translated message{preferredLanguage ? ` (${LANGUAGE_OPTIONS.find(l => l.code === preferredLanguage)?.name ?? preferredLanguage})` : ''} — edit if needed
-              </label>
-              <textarea
-                value={fallbackText}
-                onChange={e => { setFallbackText(e.target.value); setTranslationConfirmed(false); }}
-                maxLength={1000}
-                rows={2}
-                className="w-full glass-input text-sm resize-none"
-                dir={['ar', 'ur'].includes(preferredLanguage) ? 'rtl' : 'ltr'}
-              />
-              <button
-                type="button"
-                onClick={() => setTranslationConfirmed(true)}
-                className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                  translationConfirmed
-                    ? 'text-emerald-400'
-                    : 'text-primary-400 hover:text-primary-300'
-                }`}
-              >
-                <CheckCircle className="w-3.5 h-3.5" />
-                {translationConfirmed ? 'Confirmed — will be used as SMS' : 'Confirm this translation'}
-              </button>
-            </motion.div>
-          )}
+                {/* Fallback message */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-slate-400">
+                    Fallback message (English)
+                    <span className="text-slate-600 ml-1">— leave blank for a default message</span>
+                  </label>
+                  <textarea
+                    value={originalText}
+                    onChange={e => { setOriginalText(e.target.value); setTranslationConfirmed(false); }}
+                    placeholder="e.g., You missed your medication reminder."
+                    maxLength={1000}
+                    rows={2}
+                    className="w-full glass-input text-sm resize-none"
+                  />
+                </div>
+
+                {/* Translation — shown for sms / both */}
+                {(fallbackType === 'sms' || fallbackType === 'both') && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-slate-400 flex items-center gap-1.5">
+                          <Languages className="w-3.5 h-3.5" />
+                          Translate SMS to
+                        </label>
+                        <select
+                          value={preferredLanguage}
+                          onChange={e => { setPreferredLanguage(e.target.value); setTranslationConfirmed(false); }}
+                          className="glass-input w-full text-sm"
+                        >
+                          <option value="">— send in English —</option>
+                          {LANGUAGE_OPTIONS.map(l => (
+                            <option key={l.code} value={l.code}>{l.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="flex items-end">
+                        <button
+                          type="button"
+                          onClick={handleTranslate}
+                          disabled={translating || !originalText.trim() || !preferredLanguage}
+                          className="w-full btn-secondary py-2.5 flex items-center justify-center gap-2 text-sm disabled:opacity-40"
+                        >
+                          {translating
+                            ? <Loader className="w-4 h-4 animate-spin" />
+                            : <Languages className="w-4 h-4" />}
+                          {translating ? 'Translating…' : 'Translate & Preview'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {fallbackText && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -4 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="space-y-2"
+                      >
+                        <label className="text-xs font-medium text-slate-400">
+                          Translated message
+                          {preferredLanguage
+                            ? ` (${LANGUAGE_OPTIONS.find(l => l.code === preferredLanguage)?.name ?? preferredLanguage})`
+                            : ''} — edit if needed
+                        </label>
+                        <textarea
+                          value={fallbackText}
+                          onChange={e => { setFallbackText(e.target.value); setTranslationConfirmed(false); }}
+                          maxLength={1000}
+                          rows={2}
+                          className="w-full glass-input text-sm resize-none"
+                          dir={['ar', 'ur'].includes(preferredLanguage) ? 'rtl' : 'ltr'}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setTranslationConfirmed(true)}
+                          className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                            translationConfirmed ? 'text-emerald-400' : 'text-primary-400 hover:text-primary-300'
+                          }`}
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" />
+                          {translationConfirmed ? 'Confirmed — will be used as SMS' : 'Confirm this translation'}
+                        </button>
+                      </motion.div>
+                    )}
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </section>
 
         {/* Save as Template inline form */}

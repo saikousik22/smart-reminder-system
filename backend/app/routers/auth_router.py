@@ -59,11 +59,13 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db),
         )
 
     access_token = create_access_token(data={"sub": user.id})
+    # CSRF protection: samesite="strict" blocks the cookie from being sent in
+    # any cross-site request (forged form POST, AJAX from attacker domain).
     response.set_cookie(
         key="access_token",
         value=access_token,
         httponly=True,
-        samesite="lax",
+        samesite="strict",
         max_age=settings.JWT_EXPIRY_HOURS * 3600,
         secure=settings.COOKIE_SECURE,
     )
@@ -73,7 +75,7 @@ def login(payload: UserLogin, response: Response, db: Session = Depends(get_db),
 @router.post("/logout", response_model=MessageResponse)
 def logout(response: Response):
     """Clear the authentication cookie."""
-    response.delete_cookie("access_token", samesite="lax")
+    response.delete_cookie("access_token", samesite="strict")
     return {"message": "Logged out successfully"}
 
 

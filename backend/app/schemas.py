@@ -87,7 +87,7 @@ class ReminderResponse(BaseModel):
     phone_number: str
     scheduled_time: datetime
     audio_filename: str
-    status: Literal["pending", "processing", "calling", "answered", "no-answer", "busy", "failed"]
+    status: Literal["pending", "processing", "calling", "answered", "no-answer", "busy", "failed", "failed_system"]
     recurrence: Optional[str] = None
     recurrence_end_date: Optional[datetime] = None
     call_sid: Optional[str] = None
@@ -103,6 +103,8 @@ class ReminderResponse(BaseModel):
     fallback_text: Optional[str] = None
     fallback_sent: bool = False
     preferred_language: Optional[str] = None
+    fallback_type: Optional[str] = None
+    fallback_email: Optional[str] = None
     group_id: Optional[int] = None
     group_name: Optional[str] = None
 
@@ -113,6 +115,10 @@ class ReminderResponse(BaseModel):
 class FeedbackSubmit(BaseModel):
     rating: int = Field(..., ge=1, le=5, description="1 = worst, 5 = best")
     comment: Optional[str] = Field(None, max_length=500)
+
+
+class BulkDeleteRequest(BaseModel):
+    ids: list[int] = Field(..., min_length=1, max_length=100, description="List of reminder IDs to delete")
 
 
 class MessageResponse(BaseModel):
