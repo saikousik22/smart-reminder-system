@@ -47,7 +47,6 @@ case "$ROLE" in
         ;;
     api)
         echo "Starting API server..."
-        start_health_server
         exec uvicorn app.main:app --host 0.0.0.0 --port 8000
         ;;
     *)
